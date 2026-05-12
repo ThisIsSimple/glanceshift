@@ -16,8 +16,10 @@
 
 import { OneEuroFilter } from './one-euro'
 import type { HeadPose } from './euler'
+import { computeNicEc, getIrisDebugPoints, type IrisFeature } from './nic-ec'
 
 type Landmark = [number, number, number]
+export type IrisDebug = ReturnType<typeof getIrisDebugPoints>
 
 // MediaPipe FaceMesh 의 478 landmark 중 head pose 추출에 쓸 인덱스
 // (WebGazer 의 facemesh.mjs 주석에 따라 "left/right" 는 subject 기준이다)
@@ -35,6 +37,12 @@ export type HeadSample = HeadPose & {
   fRoll: number
   t: number
   detected: boolean
+  /** refineLandmarks=true 일 때만 채워짐 (478 landmarks). null 이면 iris 피처 없음. */
+  iris: IrisFeature | null
+  /** HUD 시각화용 raw 좌표 — production 에선 안 씀 */
+  irisDebug: IrisDebug | null
+  /** 본 프레임의 face mesh landmark 개수 (468 vs 478 디버깅용) */
+  landmarkCount: number
 }
 
 export type HeadTrackerStatus = 'unloaded' | 'waiting-video' | 'ready' | 'error' | 'stopped'
@@ -153,6 +161,8 @@ export function createHeadTracker(): HeadTracker {
       if (changed) {
         lastLandmarks = positions
         const pose = computeHeadPose(positions)
+        const iris = computeNicEc(positions)         // 478 미만이면 null
+        const irisDebug = iris ? getIrisDebugPoints(positions) : null
         const t = performance.now()
         if (pose) {
           const sample: HeadSample = {
@@ -163,7 +173,10 @@ export function createHeadTracker(): HeadTracker {
             fPitch: fPitch.filter(pose.pitch, t),
             fRoll: fRoll.filter(pose.roll, t),
             t,
-            detected: true
+            detected: true,
+            iris,
+            irisDebug,
+            landmarkCount: positions.length
           }
           sampleListeners.forEach((cb) => cb(sample))
         }
@@ -178,7 +191,10 @@ export function createHeadTracker(): HeadTracker {
           yaw: 0, pitch: 0, roll: 0,
           fYaw: 0, fPitch: 0, fRoll: 0,
           t: performance.now(),
-          detected: false
+          detected: false,
+          iris: null,
+          irisDebug: null,
+          landmarkCount: 0
         })
       )
     }

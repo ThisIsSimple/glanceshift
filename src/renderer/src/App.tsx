@@ -32,7 +32,8 @@ type Point = { x: number; y: number; t: number }
 const ZERO_HEAD: HeadSample = {
   yaw: 0, pitch: 0, roll: 0,
   fYaw: 0, fPitch: 0, fRoll: 0,
-  t: 0, detected: false
+  t: 0, detected: false,
+  iris: null, irisDebug: null, landmarkCount: 0
 }
 
 export function App(): JSX.Element {

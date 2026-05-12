@@ -135,6 +135,39 @@ export function DebugHud({
                 : '— no face —'}
             </span>
           </div>
+          <div className="row">
+            <span className="label">landmarks</span>
+            <span
+              className="value"
+              style={{
+                color:
+                  head.landmarkCount >= 478
+                    ? '#7be38a'
+                    : head.landmarkCount > 0
+                      ? '#e3c97b'
+                      : 'rgba(255,255,255,0.3)'
+              }}
+            >
+              {head.landmarkCount > 0
+                ? `${head.landmarkCount}${head.landmarkCount >= 478 ? ' (iris ✓)' : ' (no iris)'}`
+                : '—'}
+            </span>
+          </div>
+          {head.iris && (
+            <div className="row">
+              <span className="label">iris NIC-EC</span>
+              <span
+                className="value"
+                style={{ fontVariantNumeric: 'tabular-nums' }}
+              >
+                {head.iris.mean[0].toFixed(3)}, {head.iris.mean[1].toFixed(3)}
+                {' '}
+                <span style={{ color: 'rgba(255,255,255,0.4)' }}>
+                  (conf {head.iris.confidence.toFixed(2)})
+                </span>
+              </span>
+            </div>
+          )}
         </>
       )}
 

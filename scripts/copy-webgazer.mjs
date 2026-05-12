@@ -16,7 +16,9 @@ import {
   mkdirSync,
   copyFileSync,
   statSync,
-  readdirSync
+  readdirSync,
+  readFileSync,
+  writeFileSync
 } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -56,10 +58,58 @@ function copyDir(srcDir, destDir) {
 }
 
 // ===== (1) WebGazer 번들 =====
+//
+// 단순 복사가 아니라 in-place patch 도 적용한다:
+//   face-landmarks-detection v1 의 createDetector 호출에 `refineLandmarks:true`
+//   옵션을 주입하여 468 landmark → 478 landmark (iris 5pt × 2eye 추가) 로 확장.
+//
+//   원본 패턴: {runtime:"mediapipe",solutionPath:<minified-id>.faceMeshSolutionPath}
+//   패치 후 : {runtime:"mediapipe",refineLandmarks:true,solutionPath:<minified-id>.faceMeshSolutionPath}
+//
+// minifier 가 식별자 이름을 바꿔도 잡히도록 regex 로 매칭한다.
 const wgSrc = resolve(root, 'node_modules/webgazer/dist/webgazer.js')
+const wgDest = resolve(publicDir, 'webgazer.js')
+
+const REFINE_PATCH_MARKER = '/*GS_PATCH_REFINE_LANDMARKS*/'
+const REFINE_PATTERN = /\{runtime:"mediapipe",(?!refineLandmarks)solutionPath:([A-Za-z_$][\w$]*\.faceMeshSolutionPath)\}/
+
+function patchWebgazerSource(src) {
+  if (src.includes(REFINE_PATCH_MARKER)) return { src, patched: false }
+  if (!REFINE_PATTERN.test(src)) {
+    return { src, patched: false, missing: true }
+  }
+  const out = src.replace(
+    REFINE_PATTERN,
+    (_, ref) => `{runtime:"mediapipe",refineLandmarks:true,${REFINE_PATCH_MARKER}solutionPath:${ref}}`
+  )
+  return { src: out, patched: true }
+}
+
 if (existsSync(wgSrc)) {
-  const wgChanged = copyIfChanged(wgSrc, resolve(publicDir, 'webgazer.js'))
-  if (wgChanged) console.log(`[assets] webgazer.js → ${publicDir}/webgazer.js`)
+  const raw = readFileSync(wgSrc, 'utf8')
+  const { src: patched, patched: didPatch, missing } = patchWebgazerSource(raw)
+
+  if (missing) {
+    console.warn('[assets] webgazer.js: refineLandmarks pattern not found — bundle layout changed?')
+    console.warn('         falling back to plain copy. iris landmarks may be unavailable.')
+  }
+
+  const needs =
+    !existsSync(wgDest) ||
+    statSync(wgDest).size !== Buffer.byteLength(patched, 'utf8') ||
+    statSync(wgSrc).mtimeMs > statSync(wgDest).mtimeMs
+
+  if (needs) {
+    mkdirSync(publicDir, { recursive: true })
+    writeFileSync(wgDest, patched, 'utf8')
+    console.log(
+      didPatch
+        ? `[assets] webgazer.js (refineLandmarks PATCHED) → ${wgDest}`
+        : `[assets] webgazer.js → ${wgDest}`
+    )
+  } else {
+    console.log('[assets] webgazer.js: up to date')
+  }
 } else {
   console.warn('[assets] webgazer not installed yet — skipping (run npm install)')
 }
