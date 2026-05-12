@@ -92,6 +92,14 @@ function registerShortcuts(): void {
     overlayWindow?.webContents.send('glanceshift:toggle-calibration')
   })
 
+  // DevTools (분리 모드)
+  globalShortcut.register('CommandOrControl+Shift+I', () => {
+    const wc = overlayWindow?.webContents
+    if (!wc) return
+    if (wc.isDevToolsOpened()) wc.closeDevTools()
+    else wc.openDevTools({ mode: 'detach' })
+  })
+
   // 빠른 종료
   globalShortcut.register('CommandOrControl+Shift+Q', () => {
     app.quit()

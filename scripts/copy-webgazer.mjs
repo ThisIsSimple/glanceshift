@@ -1,37 +1,31 @@
 /**
  * predev / prebuild / postinstall:
- *   node_modules/webgazer/dist/ 의 다음 자산을 src/renderer/public/ 으로 복사한다.
- *     - webgazer.js                       (메인 번들)
- *     - mediapipe/face_mesh/...            (MediaPipe Face Mesh 솔루션 파일들)
+ *   WebGazer 관련 자산을 src/renderer/public/ 으로 준비한다.
  *
- * 왜 필요한가:
- *   WebGazer 3.5.x 는 face-landmarks-detection v1 의 mediapipe runtime을 쓴다.
- *   이 모델은 `solutionPath: './mediapipe/face_mesh'` 에서 다음을 fetch 한다:
- *     · face_mesh_solution_simd_wasm_bin.js  (loader)
- *     · face_mesh_solution_simd_wasm_bin.wasm
- *     · face_mesh.binarypb
- *     · face_mesh_solution_packed_assets.data
- *   이 파일이 없으면 fetch가 404를 반환하고, 로더가 HTML을 JS로 평가하려다
- *   "t is not a function" 같은 minified TypeError 로 터진다.
+ *     - node_modules/webgazer/dist/webgazer.js
+ *     - node_modules/webgazer/dist/mediapipe/face_mesh/...
+ *
+ * Note (Phase 2):
+ *   Head pose 는 WebGazer 가 이미 추출하는 478개 face mesh landmarks 를 그대로
+ *   재사용해서 계산한다. @mediapipe/tasks-vision 은 같은 페이지에서 두 MediaPipe
+ *   런타임이 전역 Module 객체를 공유하면서 충돌하는 문제 때문에 채택하지 않았다.
  */
 
-import { existsSync, mkdirSync, copyFileSync, statSync, readdirSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  copyFileSync,
+  statSync,
+  readdirSync
+} from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
+const publicDir = resolve(root, 'src/renderer/public')
 
-const srcRoot = resolve(root, 'node_modules/webgazer/dist')
-const destRoot = resolve(root, 'src/renderer/public')
-
-if (!existsSync(srcRoot)) {
-  console.error(`[copy-webgazer] not found: ${srcRoot}`)
-  console.error(`  run \`npm install\` first to fetch the webgazer package.`)
-  process.exit(1)
-}
-
-/** 단일 파일 복사 — size/mtime 동일하면 skip. */
+/** size/mtime 동일하면 skip 하는 단일 파일 복사. */
 function copyIfChanged(src, dest) {
   mkdirSync(dirname(dest), { recursive: true })
   const needs =
@@ -61,17 +55,23 @@ function copyDir(srcDir, destDir) {
   return copied
 }
 
-const webgazerSrc = resolve(srcRoot, 'webgazer.js')
-const webgazerDest = resolve(destRoot, 'webgazer.js')
-const wgChanged = copyIfChanged(webgazerSrc, webgazerDest)
+// ===== (1) WebGazer 번들 =====
+const wgSrc = resolve(root, 'node_modules/webgazer/dist/webgazer.js')
+if (existsSync(wgSrc)) {
+  const wgChanged = copyIfChanged(wgSrc, resolve(publicDir, 'webgazer.js'))
+  if (wgChanged) console.log(`[assets] webgazer.js → ${publicDir}/webgazer.js`)
+} else {
+  console.warn('[assets] webgazer not installed yet — skipping (run npm install)')
+}
 
-const mpSrc = resolve(srcRoot, 'mediapipe/face_mesh')
-const mpDest = resolve(destRoot, 'mediapipe/face_mesh')
-const mpChangedCount = copyDir(mpSrc, mpDest)
-
-if (wgChanged) console.log(`[copy-webgazer] ${webgazerSrc} → ${webgazerDest}`)
-console.log(
-  mpChangedCount > 0
-    ? `[copy-webgazer] mediapipe/face_mesh: ${mpChangedCount} file(s) copied → ${mpDest}`
-    : `[copy-webgazer] mediapipe/face_mesh: up to date`
-)
+// ===== (2) WebGazer 의 MediaPipe Face Mesh =====
+const wgMpSrc = resolve(root, 'node_modules/webgazer/dist/mediapipe/face_mesh')
+const wgMpDest = resolve(publicDir, 'mediapipe/face_mesh')
+if (existsSync(wgMpSrc)) {
+  const count = copyDir(wgMpSrc, wgMpDest)
+  console.log(
+    count > 0
+      ? `[assets] mediapipe/face_mesh: ${count} file(s) copied`
+      : `[assets] mediapipe/face_mesh: up to date`
+  )
+}

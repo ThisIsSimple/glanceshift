@@ -48,6 +48,11 @@
 
 .debug-hud .label { color: var(--gs-text-dim); }
 .debug-hud .value { color: var(--gs-text); font-variant-numeric: tabular-nums; }
+.debug-hud .hud-sep {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 6px 0;
+}
 
 /* Edge zone 디버그 시각화 — 평소엔 숨김, 디버그 모드에서만 */
 .edge-zone-debug {

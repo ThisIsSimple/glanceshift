@@ -27,6 +27,8 @@ electron.vite.config.*.cjs
 # 저장소에 넣지 않는다 (~19 MB).
 src/renderer/public/webgazer.js
 src/renderer/public/mediapipe/
+# Phase 2 초기에 @mediapipe/tasks-vision 시도했다가 폐기한 흔적 (남아 있어도 빌드 무관)
+src/renderer/public/mediapipe-tasks/
 
 # ===== TypeScript =====
 *.tsbuildinfo

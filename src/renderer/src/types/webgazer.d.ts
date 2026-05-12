@@ -49,6 +49,9 @@ export interface WebGazerAPI {
   /** isReady — face mesh model 로드 끝났는지. */
   isReady(): boolean
 
+  /** 현재 face-mesh tracker 객체. 478 landmarks 접근에 사용. */
+  getTracker(): WebGazerTracker
+
   params: {
     showVideo: boolean
     showFaceOverlay: boolean
@@ -58,6 +61,13 @@ export interface WebGazerAPI {
     videoViewerHeight?: number
     [k: string]: unknown
   }
+}
+
+/** WebGazer face mesh tracker — 478개 landmark 를 노출. */
+export interface WebGazerTracker {
+  /** [[x, y, z], ...] — 478개 entry, 카메라 픽셀 좌표(x, y)와 정규화 깊이(z). */
+  getPositions(): Array<[number, number, number]> | null
+  // (다른 메서드들이 있지만 우리가 쓰는 건 getPositions 뿐)
 }
 
 declare global {

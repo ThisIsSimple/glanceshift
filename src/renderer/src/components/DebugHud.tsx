@@ -5,15 +5,41 @@
  * Cmd/Ctrl+Shift+D 단축키로만 띄운다.
  */
 
+import type { HeadSample, HeadTrackerStatus } from '../perception/face-landmarker'
+
 type Props = {
   point: { x: number; y: number; t: number }
   viewport: { w: number; h: number }
   clickThrough: boolean
   inputSource: string
   trackerStatus?: string
+  headStatus?: HeadTrackerStatus
+  headError?: string | null
+  head?: HeadSample
 }
 
-export function DebugHud({ point, viewport, clickThrough, inputSource, trackerStatus }: Props): JSX.Element {
+function fmtDeg(v: number): string {
+  const s = v >= 0 ? '+' : ''
+  return `${s}${v.toFixed(1)}°`
+}
+
+function statusColor(s?: string): string | undefined {
+  if (!s) return undefined
+  if (s === 'ready') return '#7be38a'
+  if (s === 'error') return '#ff7777'
+  return 'rgba(255,255,255,0.5)'
+}
+
+export function DebugHud({
+  point,
+  viewport,
+  clickThrough,
+  inputSource,
+  trackerStatus,
+  headStatus,
+  headError,
+  head
+}: Props): JSX.Element {
   // 영역 분류 미리보기 (Phase 3 edge-detector 의 placeholder)
   const edgeFrac = 0.08
   const xFrac = point.x / viewport.w
@@ -29,6 +55,7 @@ export function DebugHud({ point, viewport, clickThrough, inputSource, trackerSt
   return (
     <div className="debug-hud">
       <h4>GlanceShift · debug</h4>
+
       <div className="row">
         <span className="label">input</span>
         <span className="value">{inputSource}</span>
@@ -53,24 +80,61 @@ export function DebugHud({ point, viewport, clickThrough, inputSource, trackerSt
         <span className="label">click-through</span>
         <span className="value">{clickThrough ? 'on' : 'off'}</span>
       </div>
+
+      <div className="hud-sep" />
+
       {trackerStatus && (
         <div className="row">
-          <span className="label">tracker</span>
-          <span
-            className="value"
-            style={{
-              color:
-                trackerStatus === 'ready'
-                  ? '#7be38a'
-                  : trackerStatus === 'error'
-                    ? '#ff7777'
-                    : 'rgba(255,255,255,0.5)'
-            }}
-          >
+          <span className="label">gaze tracker</span>
+          <span className="value" style={{ color: statusColor(trackerStatus) }}>
             {trackerStatus}
           </span>
         </div>
       )}
+      {headStatus && (
+        <div className="row">
+          <span className="label">head tracker</span>
+          <span className="value" style={{ color: statusColor(headStatus) }}>
+            {headStatus}
+          </span>
+        </div>
+      )}
+      {headStatus === 'error' && headError && (
+        <div
+          style={{
+            fontSize: 10,
+            color: '#ff9999',
+            background: 'rgba(255, 100, 100, 0.08)',
+            padding: '6px 8px',
+            borderRadius: 6,
+            marginTop: 4,
+            maxWidth: 280,
+            wordBreak: 'break-word'
+          }}
+        >
+          {headError}
+        </div>
+      )}
+
+      {head && headStatus === 'ready' && (
+        <>
+          <div className="row">
+            <span className="label">yaw / pitch / roll</span>
+            <span
+              className="value"
+              style={{
+                color: head.detected ? undefined : 'rgba(255,255,255,0.3)',
+                fontVariantNumeric: 'tabular-nums'
+              }}
+            >
+              {head.detected
+                ? `${fmtDeg(head.fYaw)} ${fmtDeg(head.fPitch)} ${fmtDeg(head.fRoll)}`
+                : '— no face —'}
+            </span>
+          </div>
+        </>
+      )}
+
       <div className="row">
         <span className="label">FSM state</span>
         <span className="value" style={{ color: 'rgba(255,255,255,0.4)' }}>idle (Phase 6)</span>

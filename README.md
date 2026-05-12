@@ -30,7 +30,7 @@ npm run dev
 
 - [x] Phase 0 — 부트스트랩 + 투명 click-through 오버레이 + 디버그 HUD
 - [x] Phase 1 — WebGazer 시선 추적 + One Euro Filter + 9-point 캘리브레이션
-- [ ] Phase 2 — MediaPipe 머리 자세 (yaw/pitch/roll)
+- [x] Phase 2 — MediaPipe FaceLandmarker 머리 자세 (yaw/pitch/roll)
 - [ ] Phase 3 — Edge gaze detection (dwell + hysteresis)
 - [ ] Phase 4 — GazeBar UI
 - [ ] Phase 5 — Head tilt 슬라이더 (볼륨·밝기)
