@@ -228,6 +228,7 @@ export function App(): JSX.Element {
             await trackerRef.current?.clearCalibration()
             setHasGazeData(false)
           }}
+          head={head}
         />
       )}
     </>
