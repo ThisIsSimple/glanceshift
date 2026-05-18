@@ -34,6 +34,7 @@ npm run dev
 - [x] Phase 3 — Edge gaze detection (dwell 150 ms + hysteresis 8% → 12%)
 - [x] Phase 3.5a — Iris landmarks (478) + NIC-EC vector
 - [x] Phase 3.5+ — Multi-pose calibration + quality gating + edge boost
+- [x] Phase 4 — GazeBar UI (edge-docked minimal sidebar with gaze hover)
 - [ ] Phase 4 — GazeBar UI
 - [ ] Phase 5 — Head tilt 슬라이더 (볼륨·밝기)
 - [ ] Phase 6 — XState FSM 통합

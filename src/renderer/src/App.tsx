@@ -16,6 +16,7 @@ import { DebugHud } from './components/DebugHud'
 import { GazeDot } from './components/GazeDot'
 import { Calibration } from './components/Calibration'
 import { EdgeZones } from './components/EdgeZones'
+import { GazeBar, type GazeBarItem } from './components/GazeBar'
 import { createGazeTracker, type GazeSample, type TrackerStatus } from './perception/webgazer'
 import {
   createHeadTracker,
@@ -27,6 +28,12 @@ import {
   DEFAULT_EDGE_CONFIG,
   type EdgeSnapshot
 } from './perception/edge-detector'
+
+// GazeBar 의 후보 항목. Phase 5 에서 머리 기울임으로 볼륨·밝기 slider 연결.
+const GAZEBAR_ITEMS: GazeBarItem[] = [
+  { id: 'volume', label: 'volume', icon: '🔊' },
+  { id: 'brightness', label: 'brightness', icon: '☀️' }
+]
 
 type Point = { x: number; y: number; t: number }
 const ZERO_HEAD: HeadSample = {
@@ -60,6 +67,7 @@ export function App(): JSX.Element {
   const [edgeSnapshot, setEdgeSnapshot] = useState<EdgeSnapshot>(() =>
     edgeDetectorRef.current.snapshot(performance.now())
   )
+  const [gazeBarHoverId, setGazeBarHoverId] = useState<string | null>(null)
 
   // 1) 시선 + 머리 트래커 init — 카메라 권한 확인 후 순차 시작
   //     순서가 중요: WebGazer 가 video element 를 만든 다음에야 FaceLandmarker 가 그걸 잡을 수 있음.
@@ -195,6 +203,10 @@ export function App(): JSX.Element {
           ? 'mouse (needs calibration — ⌘⇧K)'
           : 'mouse (Phase 0 fallback)'
 
+  // GazeBar 는 edge state 가 'entered' 인 동안만 보임.
+  // dwelling 단계에서는 EdgeZones 의 highlight 가 미리보기 역할.
+  const gazeBarEdge = edgeSnapshot.state === 'entered' ? edgeSnapshot.edge : null
+
   return (
     <>
       <EdgeZones
@@ -202,6 +214,14 @@ export function App(): JSX.Element {
         viewport={viewport}
         snapshot={edgeSnapshot}
         visible={debugVisible}
+      />
+
+      <GazeBar
+        edge={gazeBarEdge}
+        viewport={viewport}
+        gazePoint={point.x >= 0 ? { x: point.x, y: point.y } : null}
+        items={GAZEBAR_ITEMS}
+        onHoverChange={setGazeBarHoverId}
       />
 
       <GazeDot x={point.x} y={point.y} visible={debugVisible} />
@@ -217,6 +237,7 @@ export function App(): JSX.Element {
           headError={headError}
           head={head}
           edge={edgeSnapshot}
+          gazeBarHover={gazeBarHoverId}
         />
       )}
 

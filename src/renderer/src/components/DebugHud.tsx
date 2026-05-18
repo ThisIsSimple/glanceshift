@@ -18,6 +18,7 @@ type Props = {
   headError?: string | null
   head?: HeadSample
   edge?: EdgeSnapshot
+  gazeBarHover?: string | null
 }
 
 function fmtDeg(v: number): string {
@@ -41,7 +42,8 @@ export function DebugHud({
   headStatus,
   headError,
   head,
-  edge
+  edge,
+  gazeBarHover
 }: Props): JSX.Element {
   // 영역 분류 미리보기 (Phase 3 edge-detector 의 placeholder)
   const edgeFrac = 0.08
@@ -196,6 +198,17 @@ export function DebugHud({
               <span className="label">dwell</span>
               <span className="value">
                 {(edge.dwellProgress * 100).toFixed(0)}%
+              </span>
+            </div>
+          )}
+          {edge.state === 'entered' && (
+            <div className="row">
+              <span className="label">gazebar hover</span>
+              <span
+                className="value"
+                style={{ color: gazeBarHover ? '#5aa9ff' : 'rgba(255,255,255,0.4)' }}
+              >
+                {gazeBarHover ?? '—'}
               </span>
             </div>
           )}
