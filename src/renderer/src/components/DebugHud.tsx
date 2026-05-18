@@ -19,6 +19,8 @@ type Props = {
   head?: HeadSample
   edge?: EdgeSnapshot
   gazeBarHover?: string | null
+  liveSliderValue?: number | null
+  sliderValues?: Record<string, number>
 }
 
 function fmtDeg(v: number): string {
@@ -43,7 +45,9 @@ export function DebugHud({
   headError,
   head,
   edge,
-  gazeBarHover
+  gazeBarHover,
+  liveSliderValue,
+  sliderValues
 }: Props): JSX.Element {
   // 영역 분류 미리보기 (Phase 3 edge-detector 의 placeholder)
   const edgeFrac = 0.08
@@ -202,16 +206,37 @@ export function DebugHud({
             </div>
           )}
           {edge.state === 'entered' && (
-            <div className="row">
-              <span className="label">gazebar hover</span>
-              <span
-                className="value"
-                style={{ color: gazeBarHover ? '#5aa9ff' : 'rgba(255,255,255,0.4)' }}
-              >
-                {gazeBarHover ?? '—'}
-              </span>
-            </div>
+            <>
+              <div className="row">
+                <span className="label">gazebar hover</span>
+                <span
+                  className="value"
+                  style={{ color: gazeBarHover ? '#5aa9ff' : 'rgba(255,255,255,0.4)' }}
+                >
+                  {gazeBarHover ?? '—'}
+                </span>
+              </div>
+              {gazeBarHover && liveSliderValue != null && (
+                <div className="row">
+                  <span className="label">slider live</span>
+                  <span className="value" style={{ color: '#7be38a' }}>
+                    {(liveSliderValue * 100).toFixed(0)}%
+                  </span>
+                </div>
+              )}
+            </>
           )}
+        </>
+      )}
+      {sliderValues && (
+        <>
+          <div className="hud-sep" />
+          {Object.entries(sliderValues).map(([id, v]) => (
+            <div className="row" key={`sv-${id}`}>
+              <span className="label">{id}</span>
+              <span className="value">{(v * 100).toFixed(0)}%</span>
+            </div>
+          ))}
         </>
       )}
 

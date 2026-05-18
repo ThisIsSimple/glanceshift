@@ -28,6 +28,7 @@ import {
   DEFAULT_EDGE_CONFIG,
   type EdgeSnapshot
 } from './perception/edge-detector'
+import { rollToValue, DEFAULT_SLIDER_CONFIG } from './perception/slider-mapper'
 
 // GazeBar 의 후보 항목. Phase 5 에서 머리 기울임으로 볼륨·밝기 slider 연결.
 const GAZEBAR_ITEMS: GazeBarItem[] = [
@@ -68,6 +69,16 @@ export function App(): JSX.Element {
     edgeDetectorRef.current.snapshot(performance.now())
   )
   const [gazeBarHoverId, setGazeBarHoverId] = useState<string | null>(null)
+  // 항목별 저장된 슬라이더 값 (commit 된 값) — Phase 7 의 OS bridge 가 이걸 읽어 적용
+  const [sliderValues, setSliderValues] = useState<Record<string, number>>({
+    volume: 0.5,
+    brightness: 0.5
+  })
+  // 현재 hover 항목의 *live* 값 — head roll 로 매 프레임 계산
+  const [liveSliderValue, setLiveSliderValue] = useState<number | null>(null)
+  // commit 처리용: 이전 hover id 를 추적, hover 가 끝나는 순간에 마지막 live 값을 저장
+  const prevHoverRef = useRef<string | null>(null)
+  const lastLiveRef = useRef<number | null>(null)
 
   // 1) 시선 + 머리 트래커 init — 카메라 권한 확인 후 순차 시작
   //     순서가 중요: WebGazer 가 video element 를 만든 다음에야 FaceLandmarker 가 그걸 잡을 수 있음.
@@ -207,6 +218,30 @@ export function App(): JSX.Element {
   // dwelling 단계에서는 EdgeZones 의 highlight 가 미리보기 역할.
   const gazeBarEdge = edgeSnapshot.state === 'entered' ? edgeSnapshot.edge : null
 
+  // 8) Slider engagement — hover 중인 항목이 있고 face 가 검출됐으면 head roll 로 live value 계산
+  const engaged = gazeBarEdge != null && gazeBarHoverId != null && head.detected
+  useEffect(() => {
+    if (!engaged) {
+      setLiveSliderValue(null)
+      return
+    }
+    const v = rollToValue(head.fRoll, DEFAULT_SLIDER_CONFIG)
+    setLiveSliderValue(v)
+    lastLiveRef.current = v
+  }, [engaged, head.fRoll])
+
+  // 9) Commit on hover release — hover 가 다른 항목/없음으로 바뀌면 직전 항목의 live 값을 저장
+  useEffect(() => {
+    const prev = prevHoverRef.current
+    if (prev && prev !== gazeBarHoverId && lastLiveRef.current != null) {
+      const committed = lastLiveRef.current
+      setSliderValues((cur) => ({ ...cur, [prev]: committed }))
+      // eslint-disable-next-line no-console
+      console.log(`[slider] COMMIT ${prev} = ${(committed * 100).toFixed(0)}%`)
+    }
+    prevHoverRef.current = gazeBarHoverId
+  }, [gazeBarHoverId])
+
   return (
     <>
       <EdgeZones
@@ -222,6 +257,8 @@ export function App(): JSX.Element {
         gazePoint={point.x >= 0 ? { x: point.x, y: point.y } : null}
         items={GAZEBAR_ITEMS}
         onHoverChange={setGazeBarHoverId}
+        valuesById={sliderValues}
+        liveValue={liveSliderValue}
       />
 
       <GazeDot x={point.x} y={point.y} visible={debugVisible} />
@@ -238,6 +275,8 @@ export function App(): JSX.Element {
           head={head}
           edge={edgeSnapshot}
           gazeBarHover={gazeBarHoverId}
+          liveSliderValue={liveSliderValue}
+          sliderValues={sliderValues}
         />
       )}
 

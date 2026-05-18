@@ -36,6 +36,10 @@ type Props = {
   items: GazeBarItem[]
   /** 항목이 hover 됐을 때 콜백 — Phase 5/6 FSM 연결용 */
   onHoverChange?: (itemId: string | null) => void
+  /** 각 항목별 현재 슬라이더 값 (0..1). 미정의면 0.5 fallback */
+  valuesById?: Record<string, number>
+  /** hover 중인 항목의 *live* 값 (engaged 상태 — head tilt 로 실시간 변하는 값) */
+  liveValue?: number | null
 }
 
 /** 가장자리에서 사이드바가 차지하는 픽셀 폭 / 길이 계산 */
@@ -55,7 +59,15 @@ function computeGeometry(edge: Edge, viewport: { w: number; h: number }) {
   return { thickness, length, isVertical, bottom: 0, left: offset } // 'bottom'
 }
 
-export function GazeBar({ edge, viewport, gazePoint, items, onHoverChange }: Props): JSX.Element | null {
+export function GazeBar({
+  edge,
+  viewport,
+  gazePoint,
+  items,
+  onHoverChange,
+  valuesById,
+  liveValue
+}: Props): JSX.Element | null {
   // edge 가 null 이면 짧은 exit 애니메이션 후 unmount
   const [renderedEdge, setRenderedEdge] = useState<Edge | null>(edge)
   const [visible, setVisible] = useState(false)
@@ -154,22 +166,47 @@ export function GazeBar({ edge, viewport, gazePoint, items, onHoverChange }: Pro
     <div className="gazebar" style={style} aria-label="GlanceShift GazeBar" role="toolbar">
       {items.map((item) => {
         const isHover = item.id === hoveredId
+        // 항목별 표시 값: hover 면 liveValue (engaged), 아니면 stored value, 둘 다 없으면 0.5
+        const stored = valuesById?.[item.id] ?? 0.5
+        const displayValue = isHover && liveValue != null ? liveValue : stored
+        const percent = Math.round(displayValue * 100)
+
+        // 슬라이더 fill 방향: vertical 변 = 아래→위 fill, horizontal 변 = 좌→우 fill
+        const fillStyle: React.CSSProperties = isVertical
+          ? {
+              background: `linear-gradient(to top,
+                rgba(90, 169, 255, ${isHover ? 0.32 : 0.16}) 0%,
+                rgba(90, 169, 255, ${isHover ? 0.32 : 0.16}) ${percent}%,
+                transparent ${percent}%, transparent 100%)`
+            }
+          : {
+              background: `linear-gradient(to right,
+                rgba(90, 169, 255, ${isHover ? 0.32 : 0.16}) 0%,
+                rgba(90, 169, 255, ${isHover ? 0.32 : 0.16}) ${percent}%,
+                transparent ${percent}%, transparent 100%)`
+            }
+
         return (
           <div
             key={item.id}
             className={`gazebar-item${isHover ? ' hover' : ''}`}
             style={{
               flex: 1,
-              flexDirection: isVertical ? 'column' : 'row'
+              flexDirection: isVertical ? 'column' : 'row',
+              ...fillStyle
             }}
           >
             <span className="gazebar-icon" aria-hidden>
               {item.icon}
             </span>
             <span className="gazebar-label">{item.label}</span>
-            {isHover && item.hint && (
-              <span className="gazebar-hint">{item.hint}</span>
-            )}
+            {/* 값 표시 — hover 일 때만 강조, 아닐 때도 작게 보여서 현재 상태 인지 */}
+            <span
+              className={`gazebar-value${isHover ? ' active' : ''}`}
+              style={{ fontVariantNumeric: 'tabular-nums' }}
+            >
+              {percent}%
+            </span>
           </div>
         )
       })}
