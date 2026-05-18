@@ -9,11 +9,13 @@
  * 실제 사용자에게 보일 GazeBar UI 는 Phase 4 에서 구현.
  */
 
-import type { EdgeSnapshot } from '../perception/edge-detector'
+import type { EdgeSnapshot, Edge } from '../perception/edge-detector'
 
 type Props = {
   /** 진입 band 폭 비율 (e.g., 0.08) */
   enterFrac: number
+  /** approach band 폭 비율 (magnetic mode 만 사용) — 설정 시 outer zone 도 그림 */
+  approachFrac?: number | null
   /** 화면 viewport */
   viewport: { w: number; h: number }
   /** 현재 detector snapshot */
@@ -21,17 +23,27 @@ type Props = {
   visible: boolean
 }
 
-export function EdgeZones({ enterFrac, viewport, snapshot, visible }: Props): JSX.Element | null {
+export function EdgeZones({
+  enterFrac,
+  approachFrac,
+  viewport,
+  snapshot,
+  visible
+}: Props): JSX.Element | null {
   if (!visible) return null
 
   const xBand = viewport.w * enterFrac
   const yBand = viewport.h * enterFrac
+  const xApproach = approachFrac ? viewport.w * approachFrac : null
+  const yApproach = approachFrac ? viewport.h * approachFrac : null
 
-  /** edge 별 활성 상태 — 0=비활성, 0..1=dwelling 진행률, >1=entered */
-  function activity(edge: 'left' | 'right' | 'top' | 'bottom'): number {
-    if (snapshot.edge !== edge) return 0
-    if (snapshot.state === 'entered') return 2
-    return snapshot.dwellProgress
+  /** edge 별 활성 상태 — 0=비활성, 0..1=dwelling 진행률, >1=entered, magnetic 모드면 score 반영 */
+  function activity(edge: Edge): number {
+    if (snapshot.state === 'entered' && snapshot.edge === edge) return 2
+    if (snapshot.edge === edge && snapshot.state === 'dwelling') return Math.max(0.3, snapshot.dwellProgress)
+    // magnetic 모드: 다른 변도 score 가 있으면 옅게 표시
+    const score = snapshot.scores?.[edge] ?? 0
+    return score * 0.3
   }
 
   function zoneStyle(act: number): React.CSSProperties {
@@ -58,6 +70,19 @@ export function EdgeZones({ enterFrac, viewport, snapshot, visible }: Props): JS
 
   return (
     <>
+      {/* approach zone — magnetic mode 일 때 더 넓은 outer band 를 옅게 표시 */}
+      {xApproach && (
+        <>
+          <div className="edge-approach-debug" style={{ left: 0, top: 0, width: xApproach, height: viewport.h }} />
+          <div className="edge-approach-debug" style={{ right: 0, top: 0, width: xApproach, height: viewport.h }} />
+        </>
+      )}
+      {yApproach && (
+        <>
+          <div className="edge-approach-debug" style={{ left: 0, top: 0, width: viewport.w, height: yApproach }} />
+          <div className="edge-approach-debug" style={{ left: 0, bottom: 0, width: viewport.w, height: yApproach }} />
+        </>
+      )}
       <div
         className="edge-zone-debug"
         style={{

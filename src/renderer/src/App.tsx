@@ -26,8 +26,10 @@ import {
 } from './perception/face-landmarker'
 import {
   EdgeDetector,
-  DEFAULT_EDGE_CONFIG,
-  type EdgeSnapshot
+  EDGE_MODE_PROFILES,
+  snapToEdge,
+  type EdgeSnapshot,
+  type EdgeDetectorConfig
 } from './perception/edge-detector'
 import { rollToValue, DEFAULT_SLIDER_CONFIG } from './perception/slider-mapper'
 
@@ -65,11 +67,21 @@ export function App(): JSX.Element {
   const [evaluating, setEvaluating] = useState(false)
   const trackerRef = useRef<ReturnType<typeof createGazeTracker> | null>(null)
 
-  // Edge detector — point/viewport 변경 시마다 update, snapshot 으로 HUD/시각화 갱신
-  const edgeDetectorRef = useRef<EdgeDetector>(new EdgeDetector(DEFAULT_EDGE_CONFIG))
+  // Edge detector — mode 별 config 으로 동작.
+  // mode 전환 (⌘⇧1/2/3) 시 setConfig 로 상태 리셋 후 새 config 적용.
+  const [edgeMode, setEdgeMode] = useState<EdgeDetectorConfig['modeLabel']>('classic')
+  const edgeDetectorRef = useRef<EdgeDetector>(new EdgeDetector(EDGE_MODE_PROFILES.classic))
   const [edgeSnapshot, setEdgeSnapshot] = useState<EdgeSnapshot>(() =>
     edgeDetectorRef.current.snapshot(performance.now())
   )
+
+  // mode 전환 → 새 config 적용 + 상태 리셋
+  useEffect(() => {
+    edgeDetectorRef.current.setConfig(EDGE_MODE_PROFILES[edgeMode])
+    setEdgeSnapshot(edgeDetectorRef.current.snapshot(performance.now()))
+    // eslint-disable-next-line no-console
+    console.log(`[edge] mode → ${edgeMode}`)
+  }, [edgeMode])
   const [gazeBarHoverId, setGazeBarHoverId] = useState<string | null>(null)
   // 항목별 저장된 슬라이더 값 (commit 된 값) — OS bridge 가 이걸 읽어 적용
   const [sliderValues, setSliderValues] = useState<Record<string, number>>({
@@ -145,11 +157,13 @@ export function App(): JSX.Element {
     const offCt = window.glanceshift.onClickThroughChange((enabled) => setClickThrough(enabled))
     const offCalib = window.glanceshift.onToggleCalibration(() => setCalibrating((v) => !v))
     const offEval = window.glanceshift.onToggleEvaluation(() => setEvaluating((v) => !v))
+    const offMode = window.glanceshift.onSetEdgeMode((m) => setEdgeMode(m))
     return () => {
       offDebug()
       offCt()
       offCalib()
       offEval()
+      offMode()
     }
   }, [])
 
@@ -224,6 +238,16 @@ export function App(): JSX.Element {
   // dwelling 단계에서는 EdgeZones 의 highlight 가 미리보기 역할.
   const gazeBarEdge = edgeSnapshot.state === 'entered' ? edgeSnapshot.edge : null
 
+  // Mode 2/3 일 때 entered 상태에서 gaze 를 변 평면으로 snap.
+  // perpendicular 정확도와 무관하게 GazeBar 항목 hover 가 안정.
+  const useSnap = edgeMode !== 'classic'
+  const gazeBarGaze =
+    useSnap && gazeBarEdge && point.x >= 0
+      ? snapToEdge({ x: point.x, y: point.y }, gazeBarEdge, viewport)
+      : point.x >= 0
+        ? { x: point.x, y: point.y }
+        : null
+
   // 8) Slider engagement — hover 중인 항목이 있고 face 가 검출됐으면 head roll 로 live value 계산
   const engaged = gazeBarEdge != null && gazeBarHoverId != null && head.detected
   useEffect(() => {
@@ -297,7 +321,8 @@ export function App(): JSX.Element {
   return (
     <>
       <EdgeZones
-        enterFrac={DEFAULT_EDGE_CONFIG.enterFrac}
+        enterFrac={EDGE_MODE_PROFILES[edgeMode].enterFrac}
+        approachFrac={EDGE_MODE_PROFILES[edgeMode].approachFrac}
         viewport={viewport}
         snapshot={edgeSnapshot}
         visible={debugVisible}
@@ -306,11 +331,12 @@ export function App(): JSX.Element {
       <GazeBar
         edge={gazeBarEdge}
         viewport={viewport}
-        gazePoint={point.x >= 0 ? { x: point.x, y: point.y } : null}
+        gazePoint={gazeBarGaze}
         items={GAZEBAR_ITEMS}
         onHoverChange={setGazeBarHoverId}
         valuesById={sliderValues}
         liveValue={liveSliderValue}
+        snapHover={useSnap}
       />
 
       <GazeDot x={point.x} y={point.y} visible={debugVisible} />

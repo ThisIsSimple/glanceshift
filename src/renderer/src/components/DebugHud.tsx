@@ -181,6 +181,22 @@ export function DebugHud({
         <>
           <div className="hud-sep" />
           <div className="row">
+            <span className="label">edge mode</span>
+            <span
+              className="value"
+              style={{
+                color:
+                  edge.modeLabel === 'classic'
+                    ? 'rgba(255,255,255,0.7)'
+                    : edge.modeLabel === 'sticky'
+                      ? '#a8d2ff'
+                      : '#ffcb7b'
+              }}
+            >
+              {edge.modeLabel}
+            </span>
+          </div>
+          <div className="row">
             <span className="label">edge state</span>
             <span
               className="value"
@@ -197,6 +213,15 @@ export function DebugHud({
               {edge.edge ? ` · ${edge.edge}` : ''}
             </span>
           </div>
+          {edge.scores && (
+            <div className="row">
+              <span className="label">scores L/R/T/B</span>
+              <span className="value" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {edge.scores.left.toFixed(2)} {edge.scores.right.toFixed(2)}{' '}
+                {edge.scores.top.toFixed(2)} {edge.scores.bottom.toFixed(2)}
+              </span>
+            </div>
+          )}
           {edge.state === 'dwelling' && (
             <div className="row">
               <span className="label">dwell</span>
@@ -245,7 +270,7 @@ export function DebugHud({
         <span className="value" style={{ color: 'rgba(255,255,255,0.4)' }}>idle (Phase 6)</span>
       </div>
       <div style={{ marginTop: 8, fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>
-        ⌘⇧D HUD · ⌘⇧M click-through · ⌘⇧K calibrate · ⌘⇧E eval · ⌘⇧Q quit
+        ⌘⇧D HUD · ⌘⇧M click · ⌘⇧K calib · ⌘⇧E eval · ⌘⇧1/2/3 edge-mode · ⌘⇧Q quit
       </div>
     </div>
   )

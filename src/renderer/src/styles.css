@@ -63,6 +63,15 @@
   z-index: 100;
 }
 
+/* Magnetic mode 의 approach zone — outer band 를 매우 옅게 */
+.edge-approach-debug {
+  position: fixed;
+  background: rgba(255, 200, 90, 0.03);
+  border: 1px dotted rgba(255, 200, 90, 0.18);
+  pointer-events: none;
+  z-index: 99;
+}
+
 /* ===== GazeBar — 가장자리 도킹 사이드바 ===== */
 .gazebar {
   background: rgba(15, 18, 24, 0.62);

@@ -40,6 +40,8 @@ type Props = {
   valuesById?: Record<string, number>
   /** hover 중인 항목의 *live* 값 (engaged 상태 — head tilt 로 실시간 변하는 값) */
   liveValue?: number | null
+  /** true 면 hover 계산이 deterministic — 항상 가장 가까운 항목 (반경 제한 없이). Mode 2/3 용 */
+  snapHover?: boolean
 }
 
 /** 가장자리에서 사이드바가 차지하는 픽셀 폭 / 길이 계산 */
@@ -66,7 +68,8 @@ export function GazeBar({
   items,
   onHoverChange,
   valuesById,
-  liveValue
+  liveValue,
+  snapHover
 }: Props): JSX.Element | null {
   // edge 가 null 이면 짧은 exit 애니메이션 후 unmount
   const [renderedEdge, setRenderedEdge] = useState<Edge | null>(edge)
@@ -114,6 +117,15 @@ export function GazeBar({
     const start = isVertical ? geom.top! : geom.left!
     const itemSize = geom.length / items.length
 
+    if (snapHover) {
+      // Deterministic: 양자화. 항상 가장 가까운 항목 (반경 제한 없이).
+      // Mode 2/3: along-edge 정확도 손실에도 hover 가 결정적.
+      const rel = (major - start) / itemSize
+      const idx = Math.max(0, Math.min(items.length - 1, Math.round(rel - 0.5)))
+      return items[idx].id
+    }
+
+    // Classic: 항목 중심 ± 반경 안에 들어와야 hover
     let bestId: string | null = null
     let bestDist = Infinity
     for (let i = 0; i < items.length; i++) {
@@ -125,7 +137,7 @@ export function GazeBar({
       }
     }
     return bestId
-  }, [geom, gazePoint, items])
+  }, [geom, gazePoint, items, snapHover])
 
   // hover 변화 알림
   useEffect(() => {

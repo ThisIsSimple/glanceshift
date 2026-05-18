@@ -105,6 +105,17 @@ function registerShortcuts(): void {
     overlayWindow?.webContents.send('glanceshift:toggle-evaluation')
   })
 
+  // Edge Lock mode 전환 — 비교 분석용
+  globalShortcut.register('CommandOrControl+Shift+1', () => {
+    overlayWindow?.webContents.send('glanceshift:set-edge-mode', 'classic')
+  })
+  globalShortcut.register('CommandOrControl+Shift+2', () => {
+    overlayWindow?.webContents.send('glanceshift:set-edge-mode', 'sticky')
+  })
+  globalShortcut.register('CommandOrControl+Shift+3', () => {
+    overlayWindow?.webContents.send('glanceshift:set-edge-mode', 'magnetic')
+  })
+
   // DevTools (분리 모드)
   globalShortcut.register('CommandOrControl+Shift+I', () => {
     const wc = overlayWindow?.webContents
