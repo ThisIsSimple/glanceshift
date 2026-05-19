@@ -186,11 +186,11 @@ export function DebugHud({
               className="value"
               style={{
                 color:
-                  edge.modeLabel === 'classic'
+                  edge.modeLabel === 'filtered'
                     ? 'rgba(255,255,255,0.7)'
-                    : edge.modeLabel === 'sticky'
-                      ? '#a8d2ff'
-                      : '#ffcb7b'
+                    : edge.modeLabel === 'raw'
+                      ? '#ffb084'
+                      : '#7be38a'
               }}
             >
               {edge.modeLabel}
@@ -213,7 +213,15 @@ export function DebugHud({
               {edge.edge ? ` · ${edge.edge}` : ''}
             </span>
           </div>
-          {edge.scores && (
+          {edge.modeLabel === 'snapping' && edge.scores ? (
+            <div className="row">
+              <span className="label">scores L/R/T/B</span>
+              <span className="value" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {edge.scores.left.toFixed(0)} {edge.scores.right.toFixed(0)}{' '}
+                {edge.scores.top.toFixed(0)} {edge.scores.bottom.toFixed(0)}
+              </span>
+            </div>
+          ) : edge.scores ? (
             <div className="row">
               <span className="label">scores L/R/T/B</span>
               <span className="value" style={{ fontVariantNumeric: 'tabular-nums' }}>
@@ -221,6 +229,43 @@ export function DebugHud({
                 {edge.scores.top.toFixed(2)} {edge.scores.bottom.toFixed(2)}
               </span>
             </div>
+          ) : null}
+          {edge.modeLabel === 'snapping' && edge.intentThreshold != null && (
+            <>
+              <div className="row">
+                <span className="label">intent score</span>
+                <span className="value" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {edge.edge ? (edge.scores?.[edge.edge] ?? 0).toFixed(0) : '0'} / {edge.intentThreshold}
+                </span>
+              </div>
+              <div className="row">
+                <span className="label">zone dwell</span>
+                <span className="value" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {(edge.zoneDwellMs ?? 0).toFixed(0)} ms
+                </span>
+              </div>
+              <div className="row">
+                <span className="label">lateral v</span>
+                <span className="value" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {(edge.lateralVelocity ?? 0).toFixed(0)} px/s
+                </span>
+              </div>
+              <div className="row">
+                <span className="label">approach v</span>
+                <span className="value" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {(edge.approachVelocity ?? 0) >= 0 ? '+' : ''}
+                  {(edge.approachVelocity ?? 0).toFixed(0)} px/s
+                </span>
+              </div>
+              <div className="row">
+                <span className="label">rail cursor</span>
+                <span className="value" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {edge.railCursor
+                    ? `(${edge.railCursor.x.toFixed(0)}, ${edge.railCursor.y.toFixed(0)})`
+                    : '—'}
+                </span>
+              </div>
+            </>
           )}
           {edge.state === 'dwelling' && (
             <div className="row">
@@ -270,7 +315,7 @@ export function DebugHud({
         <span className="value" style={{ color: 'rgba(255,255,255,0.4)' }}>idle (Phase 6)</span>
       </div>
       <div style={{ marginTop: 8, fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>
-        ⌘⇧D HUD · ⌘⇧M click · ⌘⇧K calib · ⌘⇧E eval · ⌘⇧1/2/3 edge-mode · ⌘⇧Q quit
+        ⌘⇧D HUD · ⌘⇧M click · ⌘⇧K calib · ⌘⇧E eval · ⌘⇧1/2/3 filtered/raw/snapping · ⌘⇧Q quit
       </div>
     </div>
   )

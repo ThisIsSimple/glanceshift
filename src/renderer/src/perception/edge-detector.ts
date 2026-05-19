@@ -1,107 +1,113 @@
 /**
- * Edge Gaze Detector — 시선이 화면 가장자리에 dwell 한 순간을 판정.
+ * Edge Gaze Detector — 시선이 화면 가장자리에 의도적으로 진입한 순간을 판정.
  *
  * 3가지 mode 를 같은 클래스가 처리한다 (config 로 분기):
  *
- *   1. classic  — 보고서 §3.3 Modes 의 baseline. binary band + 즉시 reset/exit.
- *                 비교 분석 의 reference.
+ *   1. filtered  — OneEuro-filtered gaze + classic dwell FSM.
+ *                  비교 분석 의 baseline. "필터 + 좁은 band + dwell" 의 정직한 구현.
  *
- *   2. sticky   — Edge Lock plan Phase A + D.
- *                 band 넓힘 (12% / 20%), dwell 중 grace 80ms, exit grace 120ms.
- *                 entered 상태에서 GazeBar 쪽 gaze snap (호출자가 처리).
+ *   2. raw       — unfiltered gaze + 동일한 classic FSM.
+ *                  OneEuro 필터의 기여도를 측정하는 control. snap=null.
  *
- *   3. magnetic — Edge Lock plan Phase A + B + C + D.
- *                 engagement field (0..1 score), score 비례 dwell credit,
- *                 approach velocity 2x bonus, sticky FSM, UI snap.
+ *   3. snapping  — OneEuro-filtered gaze + IntentTracker + RailFSM + UI snap.
+ *                  의도(Intent) 와 위치(Position) 를 분리. 의도 임계 도달 시 rail lock.
+ *                  Lock 중에는 along-edge 좌표만 유지, perpendicular 는 rail 평면에 강제.
  *
  * 보고서 매핑:
- *   §1.2  시선 = coarse target designation 채널 → sticky/magnetic 이 그 의도 직구현
+ *   §1.2  시선 = coarse target designation 채널 → snapping mode 가 그 의도 직구현
  *   §4.1  Salvucci et al. (2009) 수백 ms 흡수 가능 → dwell 120~150ms 범위 유지
  *   §4.4  Jacob (1990) Midas Touch → enter dwell + exit hysteresis 로 의도 분리
  *   §4.5  Boundary Conditions → mode 별 trigger success rate 정량 비교
  */
 
-export type Edge = 'left' | 'right' | 'top' | 'bottom'
+import {
+  IntentTracker,
+  DEFAULT_SNAP_CONFIG,
+  perpendicularDistance,
+  vpDim,
+  type SnapConfig,
+  type IntentSample,
+  type Edge
+} from './intent-score'
+
+export type { Edge } from './intent-score'
 export type EdgeState = 'idle' | 'dwelling' | 'entered'
+export type ModeLabel = 'filtered' | 'raw' | 'snapping'
 
 export interface EdgeDetectorConfig {
-  /** 진입 band 폭 (각 변에서) — viewport 비율 */
+  modeLabel: ModeLabel
+  // classic FSM 용 (filtered / raw)
   enterFrac: number
-  /** 이탈 band 폭 — 진입보다 안쪽까지 들어와야 함 (hysteresis) */
   exitFrac: number
-  /** 진입 dwell 누적 시간 ms */
   dwellMs: number
-  /** 0 = 즉시 reset/exit (classic). >0 = grace 기간 동안 jitter 허용 */
   exitGraceMs: number
-  /** dwelling 중 band 밖 grace ms. 0 = 즉시 reset */
   dwellGraceMs: number
-  /** Engagement field outer boundary (viewport 비율). null = binary (Mode 1/2), 값 = magnetic (Mode 3) */
-  approachFrac: number | null
-  /** Approach velocity 가 임계 초과 시 dwell credit 2x */
-  velocityBonus: boolean
-  /** 디버그용 mode 식별자 */
-  modeLabel: 'classic' | 'sticky' | 'magnetic'
+  // snapping mode 가 활성화될 때만 사용 — IntentTracker config 으로 전달
+  snap: SnapConfig | null
 }
 
 /** 3 mode 프로필 — App 이 globalShortcut ⌘⇧1/2/3 로 전환. */
-export const EDGE_MODE_PROFILES: Record<EdgeDetectorConfig['modeLabel'], EdgeDetectorConfig> = {
-  classic: {
+export const EDGE_MODE_PROFILES: Record<ModeLabel, EdgeDetectorConfig> = {
+  filtered: {
+    modeLabel: 'filtered',
     enterFrac: 0.08,
     exitFrac: 0.12,
     dwellMs: 150,
     exitGraceMs: 0,
     dwellGraceMs: 0,
-    approachFrac: null,
-    velocityBonus: false,
-    modeLabel: 'classic'
+    snap: null
   },
-  sticky: {
-    enterFrac: 0.12,
-    exitFrac: 0.20,
-    dwellMs: 120,
-    exitGraceMs: 120,
-    dwellGraceMs: 80,
-    approachFrac: null,
-    velocityBonus: false,
-    modeLabel: 'sticky'
+  raw: {
+    modeLabel: 'raw',
+    enterFrac: 0.08,
+    exitFrac: 0.12,
+    dwellMs: 150,
+    exitGraceMs: 0,
+    dwellGraceMs: 0,
+    snap: null
   },
-  magnetic: {
-    enterFrac: 0.12,
-    exitFrac: 0.20,
-    dwellMs: 120,
-    exitGraceMs: 150,
-    dwellGraceMs: 200,
-    approachFrac: 0.22,
-    velocityBonus: true,
-    modeLabel: 'magnetic'
+  snapping: {
+    modeLabel: 'snapping',
+    // classic 분기 값은 사용 안 함 (호환 위해 유지). 실제 동작은 snap config 으로.
+    enterFrac: 0,
+    exitFrac: 0,
+    dwellMs: 0,
+    exitGraceMs: 0,
+    dwellGraceMs: 0,
+    snap: DEFAULT_SNAP_CONFIG
   }
 }
 
-export const DEFAULT_EDGE_CONFIG: EdgeDetectorConfig = EDGE_MODE_PROFILES.classic
+export const DEFAULT_EDGE_CONFIG: EdgeDetectorConfig = EDGE_MODE_PROFILES.filtered
 
 export type EdgeEvent =
-  | { type: 'enter'; edge: Edge; t: number; mode: EdgeDetectorConfig['modeLabel'] }
-  | { type: 'exit'; edge: Edge; t: number; mode: EdgeDetectorConfig['modeLabel'] }
+  | { type: 'enter'; edge: Edge; t: number; mode: ModeLabel }
+  | { type: 'exit'; edge: Edge; t: number; mode: ModeLabel }
 
 export type EdgeSnapshot = {
   state: EdgeState
   edge: Edge | null
-  dwellProgress: number     // 0..1
+  dwellProgress: number // 0..1
   enteredAt: number | null
-  /** magnetic mode 에서 채워짐 — 각 변별 engagement score (0..1) */
+  /** snapping mode 에서 채워짐 — 각 변별 intent score */
   scores?: Record<Edge, number>
-  /** 디버그용 — 마지막으로 본 approach velocity (px/s, edge normal 방향) */
+  /** 디버그용 — 마지막으로 본 approach velocity (px/s, edge 안쪽 방향 +) */
   approachVelocity?: number
   /** 현재 mode label */
-  modeLabel: EdgeDetectorConfig['modeLabel']
+  modeLabel: ModeLabel
+  // snapping 전용 추가:
+  intentZoneFrac?: number
+  lockZoneFrac?: number
+  railCursor?: { x: number; y: number } | null
+  intentThreshold?: number
+  zoneDwellMs?: number
+  lateralVelocity?: number
 }
 
 type Point = { x: number; y: number }
 type Viewport = { w: number; h: number }
 
-const VELOCITY_THRESHOLD_PXS = 350  // px/s — 이 이상이면 의도적 approach 판정
-
-/** Binary classifier — 좌표가 어느 edge band 안에 있는지 (혹은 없음). */
+/** Binary classifier — 좌표가 어느 edge band 안에 있는지 (혹은 없음). classic FSM 용. */
 function classifyEdge(p: Point, vp: Viewport, frac: number): Edge | null {
   if (p.x < 0 || p.y < 0) return null
   const lx = vp.w * frac
@@ -124,69 +130,10 @@ function classifyEdge(p: Point, vp: Viewport, frac: number): Edge | null {
   return candidates[0][0]
 }
 
-/** 변별 engagement score: outer ~ inner 사이를 0..1 로 선형 보간. */
-function computeEngagement(
-  p: Point,
-  vp: Viewport,
-  outerFrac: number,
-  innerFrac: number
-): Record<Edge, number> {
-  const w = vp.w, h = vp.h
-  // outer = 영향이 0이 되는 거리, inner = 1 이 되는 거리. inner < outer.
-  // distance from each edge:
-  const dLeft = p.x / w
-  const dRight = (w - p.x) / w
-  const dTop = p.y / h
-  const dBottom = (h - p.y) / h
-
-  function score(distFrac: number): number {
-    // distFrac 0 ~ outerFrac 까지가 의미 있는 범위.
-    // distFrac < innerFrac 면 score = 1, distFrac > outerFrac 면 0.
-    if (distFrac <= innerFrac) return 1
-    if (distFrac >= outerFrac) return 0
-    return 1 - (distFrac - innerFrac) / (outerFrac - innerFrac)
-  }
-  return {
-    left: score(dLeft),
-    right: score(dRight),
-    top: score(dTop),
-    bottom: score(dBottom)
-  }
-}
-
-/** 가장 큰 score 의 edge 와 그 값 반환. score 0 이면 null. */
-function pickPrimary(scores: Record<Edge, number>): { edge: Edge | null; score: number } {
-  let best: Edge | null = null
-  let bestScore = 0
-  for (const e of ['left', 'right', 'top', 'bottom'] as Edge[]) {
-    if (scores[e] > bestScore) {
-      bestScore = scores[e]
-      best = e
-    }
-  }
-  return { edge: best, score: bestScore }
-}
-
-/** edge 의 inward-normal 방향 단위 vector. */
-function edgeNormal(edge: Edge): { dx: number; dy: number } {
-  if (edge === 'left') return { dx: -1, dy: 0 }
-  if (edge === 'right') return { dx: 1, dy: 0 }
-  if (edge === 'top') return { dx: 0, dy: -1 }
-  return { dx: 0, dy: 1 }
-}
-
-/** 시선이 변 쪽으로 얼마나 빨리 이동 중인지 (px/s, 양수 = 가까워짐). */
-function approachVelocity(prev: Point, curr: Point, edge: Edge, dt: number): number {
-  if (dt <= 0) return 0
-  const { dx, dy } = edgeNormal(edge)
-  // outward direction toward edge = -normal (normal 은 inward)
-  const vx = (curr.x - prev.x) / (dt / 1000)
-  const vy = (curr.y - prev.y) / (dt / 1000)
-  // outward 성분이 양수면 edge 로 접근 중
-  return vx * -dx + vy * -dy
-}
+type SnappingState = 'idle' | 'building_intent' | 'rail_locked'
 
 export class EdgeDetector {
+  // ===== classic FSM 상태 (filtered/raw) =====
   private state: EdgeState = 'idle'
   private currentEdge: Edge | null = null
   private dwellAccum = 0
@@ -195,15 +142,30 @@ export class EdgeDetector {
   private enteredAt: number | null = null
   private lastNow: number | null = null
   private lastPoint: Point | null = null
-  private lastScores: Record<Edge, number> | null = null
-  private lastVelocity = 0
 
-  constructor(public config: EdgeDetectorConfig = DEFAULT_EDGE_CONFIG) {}
+  // ===== snapping FSM 상태 =====
+  private snapState: SnappingState = 'idle'
+  private snapCurrentEdge: Edge | null = null
+  private snapExitGraceAccum = 0
+  private snapRailCursor: { x: number; y: number } | null = null
+  private intentTracker: IntentTracker | null = null
+  private lastIntentSample: IntentSample | null = null
+
+  constructor(public config: EdgeDetectorConfig = DEFAULT_EDGE_CONFIG) {
+    if (config.snap) {
+      this.intentTracker = new IntentTracker(config.snap)
+    }
+  }
 
   /** mode 전환 시 사용 — 상태 리셋 후 새 config 적용. */
   setConfig(cfg: EdgeDetectorConfig): void {
     this.config = cfg
     this.reset()
+    if (cfg.snap) {
+      this.intentTracker = new IntentTracker(cfg.snap)
+    } else {
+      this.intentTracker = null
+    }
   }
 
   reset(): void {
@@ -215,45 +177,32 @@ export class EdgeDetector {
     this.enteredAt = null
     this.lastNow = null
     this.lastPoint = null
-    this.lastScores = null
-    this.lastVelocity = 0
+
+    this.snapState = 'idle'
+    this.snapCurrentEdge = null
+    this.snapExitGraceAccum = 0
+    this.snapRailCursor = null
+    this.lastIntentSample = null
+    if (this.intentTracker) this.intentTracker.reset()
   }
 
   update(point: Point, viewport: Viewport, now: number): EdgeEvent | null {
-    // dt 계산 (px/s velocity, ms accumulator 모두에 쓰임)
-    const dt = this.lastNow != null ? Math.max(0, Math.min(200, now - this.lastNow)) : 0
-    // 한 frame skip 이 너무 크면 영향을 제한 (200ms cap)
-
-    // ===== 1. 입력 분류 =====
-    // approachFrac 가 있으면 engagement field, 없으면 binary
-    let primaryEdge: Edge | null
-    let primaryScore: number
-    let scores: Record<Edge, number> | null = null
-    if (this.config.approachFrac != null) {
-      scores = computeEngagement(point, viewport, this.config.approachFrac, this.config.enterFrac)
-      const picked = pickPrimary(scores)
-      primaryEdge = picked.edge
-      primaryScore = picked.score
-    } else {
-      primaryEdge = classifyEdge(point, viewport, this.config.enterFrac)
-      primaryScore = primaryEdge ? 1 : 0
+    if (this.config.snap) {
+      return this.updateSnapping(point, viewport, now)
     }
-    this.lastScores = scores
+    return this.updateClassic(point, viewport, now)
+  }
 
-    // exit 판정은 mode 무관하게 binary exitFrac
+  // ============================================================
+  // Classic FSM — filtered / raw mode
+  // ============================================================
+  private updateClassic(point: Point, viewport: Viewport, now: number): EdgeEvent | null {
+    const dt = this.lastNow != null ? Math.max(0, Math.min(200, now - this.lastNow)) : 0
+
+    const primaryEdge = classifyEdge(point, viewport, this.config.enterFrac)
+    const primaryScore = primaryEdge ? 1 : 0
     const exitEdge = classifyEdge(point, viewport, this.config.exitFrac)
 
-    // velocity factor
-    let velocityFactor = 1
-    if (this.config.velocityBonus && this.lastPoint && primaryEdge && dt > 0) {
-      const v = approachVelocity(this.lastPoint, point, primaryEdge, dt)
-      this.lastVelocity = v
-      if (v > VELOCITY_THRESHOLD_PXS) velocityFactor = 2
-    } else {
-      this.lastVelocity = 0
-    }
-
-    // ===== 2. 상태 머신 =====
     let event: EdgeEvent | null = null
 
     switch (this.state) {
@@ -261,7 +210,7 @@ export class EdgeDetector {
         if (primaryEdge && primaryScore > 0) {
           this.state = 'dwelling'
           this.currentEdge = primaryEdge
-          this.dwellAccum = primaryScore * dt * velocityFactor
+          this.dwellAccum = primaryScore * dt
           this.outOfBandAccum = 0
         }
         break
@@ -269,16 +218,13 @@ export class EdgeDetector {
 
       case 'dwelling': {
         if (primaryEdge === this.currentEdge && primaryScore > 0) {
-          // 같은 변에 머무름: credit 누적
-          this.dwellAccum += primaryScore * dt * velocityFactor
+          this.dwellAccum += primaryScore * dt
           this.outOfBandAccum = 0
         } else if (primaryEdge && primaryEdge !== this.currentEdge && primaryScore > 0.5) {
-          // 다른 변으로 분명히 옮겨감 → 새 dwell 시작
           this.currentEdge = primaryEdge
-          this.dwellAccum = primaryScore * dt * velocityFactor
+          this.dwellAccum = primaryScore * dt
           this.outOfBandAccum = 0
         } else {
-          // band 밖 (또는 score 0) — grace 누적
           this.outOfBandAccum += dt
           if (this.outOfBandAccum > this.config.dwellGraceMs) {
             this.state = 'idle'
@@ -300,7 +246,6 @@ export class EdgeDetector {
 
       case 'entered': {
         if (exitEdge === this.currentEdge) {
-          // 여전히 exit band 안 — grace 리셋
           this.exitGraceAccum = 0
         } else {
           this.exitGraceAccum += dt
@@ -322,31 +267,185 @@ export class EdgeDetector {
     return event
   }
 
+  // ============================================================
+  // Rail FSM — snapping mode
+  // ============================================================
+  private updateSnapping(point: Point, viewport: Viewport, now: number): EdgeEvent | null {
+    const snapCfg = this.config.snap!
+    const tracker = this.intentTracker!
+    const dt = this.lastNow != null ? Math.max(0, Math.min(200, now - this.lastNow)) : 0
+
+    let event: EdgeEvent | null = null
+
+    switch (this.snapState) {
+      case 'idle': {
+        // intent 추적만, lock 없음
+        this.lastIntentSample = tracker.update(point, viewport, now)
+        if (this.lastIntentSample.primary) {
+          this.snapState = 'building_intent'
+          this.snapCurrentEdge = this.lastIntentSample.primary.edge
+        }
+        break
+      }
+
+      case 'building_intent': {
+        this.lastIntentSample = tracker.update(point, viewport, now)
+        const primary = this.lastIntentSample.primary
+        if (!primary) {
+          this.snapState = 'idle'
+          this.snapCurrentEdge = null
+        } else if (primary.edge !== this.snapCurrentEdge) {
+          // 다른 변으로 의도 전환
+          this.snapCurrentEdge = primary.edge
+        } else if (primary.score >= snapCfg.intentThreshold) {
+          // Lock 진입
+          this.snapState = 'rail_locked'
+          this.enteredAt = now
+          this.snapExitGraceAccum = 0
+          this.snapRailCursor = projectToRail(point, this.snapCurrentEdge!, viewport)
+          tracker.reset() // score 누적 끊고 lock 유지 모드로
+          event = {
+            type: 'enter',
+            edge: this.snapCurrentEdge!,
+            t: now,
+            mode: this.config.modeLabel
+          }
+        }
+        break
+      }
+
+      case 'rail_locked': {
+        // intentTracker 는 lock 중에는 호출 안 함 (계산 낭비). lastIntentSample 도 그대로 유지.
+        if (this.snapCurrentEdge && inLockZone(point, viewport, this.snapCurrentEdge, snapCfg.lockZoneFrac)) {
+          this.snapRailCursor = projectToRail(point, this.snapCurrentEdge, viewport)
+          this.snapExitGraceAccum = 0
+        } else {
+          this.snapExitGraceAccum += dt
+          if (this.snapExitGraceAccum >= snapCfg.exitGraceMs) {
+            const edge = this.snapCurrentEdge!
+            this.snapState = 'idle'
+            this.snapCurrentEdge = null
+            this.snapRailCursor = null
+            this.enteredAt = null
+            this.snapExitGraceAccum = 0
+            event = { type: 'exit', edge, t: now, mode: this.config.modeLabel }
+          }
+        }
+        break
+      }
+    }
+
+    this.lastNow = now
+    this.lastPoint = point
+    return event
+  }
+
   snapshot(_now: number): EdgeSnapshot {
+    if (this.config.snap) {
+      // snapping mode → snapState 매핑
+      const snapCfg = this.config.snap
+      let state: EdgeState = 'idle'
+      let progress = 0
+      if (this.snapState === 'building_intent') {
+        state = 'dwelling'
+        const score = this.lastIntentSample?.primary?.score ?? 0
+        progress = Math.min(1, score / Math.max(1, snapCfg.intentThreshold))
+      } else if (this.snapState === 'rail_locked') {
+        state = 'entered'
+        progress = 1
+      }
+      const snap: EdgeSnapshot = {
+        state,
+        edge: this.snapCurrentEdge,
+        dwellProgress: progress,
+        enteredAt: this.enteredAt,
+        modeLabel: this.config.modeLabel,
+        intentZoneFrac: snapCfg.intentZoneFrac,
+        lockZoneFrac: snapCfg.lockZoneFrac,
+        intentThreshold: snapCfg.intentThreshold,
+        railCursor: this.snapRailCursor
+      }
+      if (this.lastIntentSample) {
+        snap.scores = this.lastIntentSample.scores
+        snap.approachVelocity = this.lastIntentSample.approachVelocity
+        snap.lateralVelocity = this.lastIntentSample.lateralVelocity
+        snap.zoneDwellMs = this.lastIntentSample.zoneDwellMs
+      }
+      return snap
+    }
+
+    // classic FSM (filtered / raw)
     let progress = 0
     if (this.state === 'dwelling') {
-      progress = Math.min(1, this.dwellAccum / this.config.dwellMs)
+      progress = Math.min(1, this.dwellAccum / Math.max(1, this.config.dwellMs))
     } else if (this.state === 'entered') {
       progress = 1
     }
-    const snap: EdgeSnapshot = {
+    return {
       state: this.state,
       edge: this.currentEdge,
       dwellProgress: progress,
       enteredAt: this.enteredAt,
       modeLabel: this.config.modeLabel
     }
-    if (this.lastScores) snap.scores = this.lastScores
-    if (this.lastVelocity) snap.approachVelocity = this.lastVelocity
-    return snap
   }
 }
 
-// ===== Gaze snap utilities (Mode 2/3 에서 GazeBar 의 hover 정확도 보강용) =====
+// ============================================================
+// Rail / snap utilities — snapping mode 전용
+// ============================================================
+
+/** GazeBar.tsx 의 computeGeometry 와 같은 thickness 산식. */
+function railThickness(vp: Viewport): number {
+  const minSide = Math.min(vp.w, vp.h)
+  return Math.max(56, Math.min(80, minSide * 0.06))
+}
 
 /**
- * Entered 상태에서 effective gaze 를 변에 투영.
- * perpendicular 좌표는 변 평면으로 강제, parallel 좌표는 원본 유지.
+ * edge 의 rail (1D 트랙) 의 perpendicular 좌표.
+ * along-edge 좌표는 호출자가 별도로 clamp.
+ */
+export function railPosition(edge: Edge, vp: Viewport): { x: number; y: number } {
+  const thickness = railThickness(vp)
+  switch (edge) {
+    case 'right':
+      return { x: vp.w - thickness / 2, y: 0 }
+    case 'left':
+      return { x: thickness / 2, y: 0 }
+    case 'top':
+      return { x: 0, y: thickness / 2 }
+    case 'bottom':
+      return { x: 0, y: vp.h - thickness / 2 }
+  }
+}
+
+/**
+ * gaze 좌표를 rail (1D) 위로 투영.
+ * perpendicular 좌표는 변에서 thickness/2 안쪽 (= GazeBar 의 중심선).
+ * along-edge 좌표는 GazeBar 의 활성 영역 (변 중심 ±30%, 총 60%) 으로 clamp.
+ */
+export function projectToRail(gaze: Point, edge: Edge, vp: Viewport): { x: number; y: number } {
+  const rail = railPosition(edge, vp)
+  const isVert = edge === 'left' || edge === 'right'
+  const along = isVert ? vp.h : vp.w
+  const start = along * 0.20
+  const end = along * 0.80
+  const clamp = (v: number): number => Math.max(start, Math.min(end, v))
+  if (isVert) return { x: rail.x, y: clamp(gaze.y) }
+  return { x: clamp(gaze.x), y: rail.y }
+}
+
+/** lock zone 판정. lockZoneFrac > intentZoneFrac (보통 0.35 vs 0.30) — hysteresis. */
+function inLockZone(gaze: Point, vp: Viewport, edge: Edge, lockZoneFrac: number): boolean {
+  if (gaze.x < 0 || gaze.y < 0) return false
+  const pd = perpendicularDistance(gaze, vp, edge)
+  return pd / vpDim(vp, edge) < lockZoneFrac
+}
+
+/**
+ * (Legacy) Entered 상태에서 effective gaze 를 변에 투영.
+ * filtered/raw mode 의 경우 호출자가 사용 — perpendicular 만 강제, along 은 원본.
+ * snapping mode 는 EdgeDetector 가 자체적으로 projectToRail 을 쓰므로 이 함수는 불필요.
  */
 export function snapToEdge(
   point: Point,

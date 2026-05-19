@@ -63,13 +63,30 @@
   z-index: 100;
 }
 
-/* Magnetic mode 의 approach zone — outer band 를 매우 옅게 */
-.edge-approach-debug {
+/* Snapping mode — Intent zone (outer 30%) */
+.edge-intent-zone {
   position: fixed;
-  background: rgba(255, 200, 90, 0.03);
-  border: 1px dotted rgba(255, 200, 90, 0.18);
+  background: rgba(90, 169, 255, 0.04);
+  border: 1px dashed rgba(90, 169, 255, 0.22);
   pointer-events: none;
   z-index: 99;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+
+/* Snapping mode — Lock zone (outer 35%, IntentZone 의 바깥 hysteresis) */
+.edge-lock-zone-outline {
+  position: fixed;
+  border: 1px dotted rgba(255, 200, 90, 0.22);
+  pointer-events: none;
+  z-index: 98;
+}
+
+/* Snapping mode — rail line (entered 상태에서만, GazeBar 중심선) */
+.edge-rail-line {
+  position: fixed;
+  background: rgba(90, 169, 255, 0.5);
+  pointer-events: none;
+  z-index: 101;
 }
 
 /* ===== GazeBar — 가장자리 도킹 사이드바 ===== */
@@ -161,6 +178,15 @@
   pointer-events: none;
   z-index: 9000;
   transition: opacity 200ms ease;
+}
+
+/* Snapping mode 의 lock 진입 순간 — rail 로 흡수되는 220ms transition */
+.gaze-dot.snapping-in {
+  transition:
+    left 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    top 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 220ms ease;
+  box-shadow: 0 0 24px rgba(90, 169, 255, 0.9);
 }
 
 /* ===== Calibration ===== */
@@ -516,6 +542,38 @@
   gap: 8px;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+/* Trigger eval — fixation cross / arrow cue / response hint */
+.eval-fixation-cross {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 48px;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  user-select: none;
+}
+.eval-arrow {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 110px;
+  font-weight: 600;
+  color: var(--gs-accent);
+  text-shadow: 0 0 24px rgba(90, 169, 255, 0.6);
+  user-select: none;
+  animation: eval-arrow-pop 180ms ease-out;
+}
+@keyframes eval-arrow-pop {
+  from { transform: translate(-50%, -50%) scale(0.85); opacity: 0; }
+  to   { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
+}
+.eval-response-hint {
+  position: absolute;
+  transform: translateX(-50%);
+  color: var(--gs-text-dim);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .calib-dot {

@@ -11,7 +11,7 @@
  *   · 진입/이탈 이벤트 콘솔 로그
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DebugHud } from './components/DebugHud'
 import { GazeDot } from './components/GazeDot'
 import { Calibration } from './components/Calibration'
@@ -27,9 +27,8 @@ import {
 import {
   EdgeDetector,
   EDGE_MODE_PROFILES,
-  snapToEdge,
   type EdgeSnapshot,
-  type EdgeDetectorConfig
+  type ModeLabel
 } from './perception/edge-detector'
 import { rollToValue, DEFAULT_SLIDER_CONFIG } from './perception/slider-mapper'
 
@@ -69,16 +68,30 @@ export function App(): JSX.Element {
 
   // Edge detector — mode 별 config 으로 동작.
   // mode 전환 (⌘⇧1/2/3) 시 setConfig 로 상태 리셋 후 새 config 적용.
-  const [edgeMode, setEdgeMode] = useState<EdgeDetectorConfig['modeLabel']>('classic')
-  const edgeDetectorRef = useRef<EdgeDetector>(new EdgeDetector(EDGE_MODE_PROFILES.classic))
+  const [edgeMode, setEdgeMode] = useState<ModeLabel>('filtered')
+  const edgeDetectorRef = useRef<EdgeDetector>(new EdgeDetector(EDGE_MODE_PROFILES.filtered))
   const [edgeSnapshot, setEdgeSnapshot] = useState<EdgeSnapshot>(() =>
     edgeDetectorRef.current.snapshot(performance.now())
   )
+  // gaze source 분기 — 'raw' 모드는 unfiltered 좌표를 listener 에서 직접 받음.
+  // listener 안의 useRawGaze 가 stale 되지 않게 ref 로 추적.
+  const useRawGazeRef = useRef(false)
+  useEffect(() => {
+    useRawGazeRef.current = edgeMode === 'raw'
+  }, [edgeMode])
+  // Snap-in animation 표시 (lock 진입 직후 200ms 동안 GazeDot 의 강한 transition)
+  const [snapAnimating, setSnapAnimating] = useState(false)
+  const snapAnimTimerRef = useRef<number | null>(null)
 
   // mode 전환 → 새 config 적용 + 상태 리셋
   useEffect(() => {
     edgeDetectorRef.current.setConfig(EDGE_MODE_PROFILES[edgeMode])
     setEdgeSnapshot(edgeDetectorRef.current.snapshot(performance.now()))
+    setSnapAnimating(false)
+    if (snapAnimTimerRef.current != null) {
+      clearTimeout(snapAnimTimerRef.current)
+      snapAnimTimerRef.current = null
+    }
     // eslint-disable-next-line no-console
     console.log(`[edge] mode → ${edgeMode}`)
   }, [edgeMode])
@@ -106,7 +119,12 @@ export function App(): JSX.Element {
 
     const offGazeSample = gazeTracker.onSample((s: GazeSample) => {
       if (cancelled) return
-      setGaze({ x: s.fx, y: s.fy, t: s.t })
+      if (useRawGazeRef.current) {
+        // raw mode 에선 필터 거치지 않은 좌표 사용 — OneEuro 기여도 측정용
+        setGaze({ x: s.x, y: s.y, t: s.t })
+      } else {
+        setGaze({ x: s.fx, y: s.fy, t: s.t })
+      }
       setHasGazeData(true)
     })
     const offGazeStatus = gazeTracker.onStatus((s, err) => {
@@ -207,25 +225,56 @@ export function App(): JSX.Element {
     if (evt) {
       // eslint-disable-next-line no-console
       console.log(
-        `[edge] ${evt.type.toUpperCase()} ${evt.edge.padEnd(6)} t=${evt.t.toFixed(0)}ms`
+        `[edge] ${evt.type.toUpperCase()} ${evt.edge.padEnd(6)} t=${evt.t.toFixed(0)}ms mode=${evt.mode}`
       )
+      // snapping mode 의 lock 진입 → snap-in 모션 트리거
+      if (evt.type === 'enter' && edgeMode === 'snapping') {
+        setSnapAnimating(true)
+        if (snapAnimTimerRef.current != null) clearTimeout(snapAnimTimerRef.current)
+        snapAnimTimerRef.current = window.setTimeout(() => {
+          setSnapAnimating(false)
+          snapAnimTimerRef.current = null
+        }, 220)
+      }
     }
     setEdgeSnapshot(edgeDetectorRef.current.snapshot(point.t || performance.now()))
-  }, [point.x, point.y, point.t, viewport.w, viewport.h])
+  }, [point.x, point.y, point.t, viewport.w, viewport.h, edgeMode])
 
-  // 7) dwelling 중에는 point 가 안 움직여도 progress 가 자라야 하므로 RAF 로 보강
+  // 7) dwelling/building 중에는 point 가 안 움직여도 progress 가 자라야 하므로 RAF 로 보강.
+  //    snapping mode 에선 intentTracker 도 매 frame 시간 적분이 필요하므로 update() 도 호출.
   useEffect(() => {
     if (edgeSnapshot.state !== 'dwelling') return
     let raf = 0
     const tick = (): void => {
-      setEdgeSnapshot(edgeDetectorRef.current.snapshot(performance.now()))
+      const now = performance.now()
+      if (edgeMode === 'snapping' && point.x >= 0 && point.y >= 0) {
+        // 같은 좌표라도 update() 를 불러야 dt 누적 (intent score / dwell)
+        const evt = edgeDetectorRef.current.update({ x: point.x, y: point.y }, viewport, now)
+        if (evt) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[edge] ${evt.type.toUpperCase()} ${evt.edge.padEnd(6)} t=${evt.t.toFixed(0)}ms mode=${evt.mode}`
+          )
+          if (evt.type === 'enter') {
+            setSnapAnimating(true)
+            if (snapAnimTimerRef.current != null) clearTimeout(snapAnimTimerRef.current)
+            snapAnimTimerRef.current = window.setTimeout(() => {
+              setSnapAnimating(false)
+              snapAnimTimerRef.current = null
+            }, 220)
+          }
+        }
+      }
+      setEdgeSnapshot(edgeDetectorRef.current.snapshot(now))
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [edgeSnapshot.state])
+  }, [edgeSnapshot.state, edgeMode, point.x, point.y, viewport.w, viewport.h])
   const inputSource = usingGaze
-    ? 'WebGazer (filtered)'
+    ? edgeMode === 'raw'
+      ? 'WebGazer (raw, unfiltered)'
+      : 'WebGazer (OneEuro filtered)'
     : trackerStatus === 'loading'
       ? 'mouse (gaze loading…)'
       : trackerStatus === 'error'
@@ -238,15 +287,22 @@ export function App(): JSX.Element {
   // dwelling 단계에서는 EdgeZones 의 highlight 가 미리보기 역할.
   const gazeBarEdge = edgeSnapshot.state === 'entered' ? edgeSnapshot.edge : null
 
-  // Mode 2/3 일 때 entered 상태에서 gaze 를 변 평면으로 snap.
-  // perpendicular 정확도와 무관하게 GazeBar 항목 hover 가 안정.
-  const useSnap = edgeMode !== 'classic'
-  const gazeBarGaze =
-    useSnap && gazeBarEdge && point.x >= 0
-      ? snapToEdge({ x: point.x, y: point.y }, gazeBarEdge, viewport)
-      : point.x >= 0
-        ? { x: point.x, y: point.y }
-        : null
+  // effectiveGaze — snapping mode 의 lock 중에는 rail 위로 강제. perpendicular jitter 무관.
+  // 그 외 mode 는 그냥 원본 point.
+  const effectiveGaze = useMemo<{ x: number; y: number } | null>(() => {
+    if (
+      edgeMode === 'snapping' &&
+      edgeSnapshot.state === 'entered' &&
+      edgeSnapshot.railCursor
+    ) {
+      return edgeSnapshot.railCursor
+    }
+    return point.x >= 0 ? { x: point.x, y: point.y } : null
+  }, [edgeMode, edgeSnapshot.state, edgeSnapshot.railCursor, point.x, point.y])
+
+  const useSnap = edgeMode === 'snapping'
+  // GazeBar 의 항목 hover 계산은 effectiveGaze 를 사용 — snapping 중에는 rail 좌표.
+  const gazeBarGaze = effectiveGaze
 
   // 8) Slider engagement — hover 중인 항목이 있고 face 가 검출됐으면 head roll 로 live value 계산
   const engaged = gazeBarEdge != null && gazeBarHoverId != null && head.detected
@@ -322,7 +378,8 @@ export function App(): JSX.Element {
     <>
       <EdgeZones
         enterFrac={EDGE_MODE_PROFILES[edgeMode].enterFrac}
-        approachFrac={EDGE_MODE_PROFILES[edgeMode].approachFrac}
+        intentZoneFrac={EDGE_MODE_PROFILES[edgeMode].snap?.intentZoneFrac ?? null}
+        lockZoneFrac={EDGE_MODE_PROFILES[edgeMode].snap?.lockZoneFrac ?? null}
         viewport={viewport}
         snapshot={edgeSnapshot}
         visible={debugVisible}
@@ -339,7 +396,12 @@ export function App(): JSX.Element {
         snapHover={useSnap}
       />
 
-      <GazeDot x={point.x} y={point.y} visible={debugVisible} />
+      <GazeDot
+        x={effectiveGaze?.x ?? point.x}
+        y={effectiveGaze?.y ?? point.y}
+        visible={debugVisible}
+        snapping={snapAnimating}
+      />
 
       {debugVisible && (
         <DebugHud

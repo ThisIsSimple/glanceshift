@@ -68,8 +68,8 @@ const api = {
     return () => ipcRenderer.removeListener('glanceshift:toggle-evaluation', listener)
   },
 
-  onSetEdgeMode: (cb: (mode: 'classic' | 'sticky' | 'magnetic') => void): (() => void) => {
-    const listener = (_e: unknown, mode: 'classic' | 'sticky' | 'magnetic'): void => cb(mode)
+  onSetEdgeMode: (cb: (mode: 'filtered' | 'raw' | 'snapping') => void): (() => void) => {
+    const listener = (_e: unknown, mode: 'filtered' | 'raw' | 'snapping'): void => cb(mode)
     ipcRenderer.on('glanceshift:set-edge-mode', listener)
     return () => ipcRenderer.removeListener('glanceshift:set-edge-mode', listener)
   }
