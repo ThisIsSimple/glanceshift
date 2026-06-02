@@ -88,35 +88,3 @@ export function computeNicEc(landmarks: Landmark[] | null | undefined): IrisFeat
     confidence
   }
 }
-
-/**
- * iris-center 와 inner/outer corner 의 픽셀 좌표 (디버그 visualization 용).
- * NIC-EC 계산과 동일한 인덱스를 노출한다.
- */
-export function getIrisDebugPoints(landmarks: Landmark[] | null | undefined): {
-  rightIris: [number, number] | null
-  leftIris: [number, number] | null
-  rightInner: [number, number] | null
-  rightOuter: [number, number] | null
-  leftInner: [number, number] | null
-  leftOuter: [number, number] | null
-} {
-  const empty = {
-    rightIris: null, leftIris: null,
-    rightInner: null, rightOuter: null,
-    leftInner: null, leftOuter: null
-  }
-  if (!landmarks || landmarks.length < 478) return empty
-  const xy = (i: number): [number, number] | null => {
-    const p = landmarks[i]
-    return p ? [p[0], p[1]] : null
-  }
-  return {
-    rightIris: xy(IDX.rightIris),
-    leftIris: xy(IDX.leftIris),
-    rightInner: xy(IDX.rightInner),
-    rightOuter: xy(IDX.rightOuter),
-    leftInner: xy(IDX.leftInner),
-    leftOuter: xy(IDX.leftOuter)
-  }
-}

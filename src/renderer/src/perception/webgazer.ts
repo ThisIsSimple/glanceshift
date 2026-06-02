@@ -34,16 +34,12 @@ export type TrackerStatus =
 export interface GazeTracker {
   start(): Promise<void>
   stop(): void
-  pause(): void
-  resume(): void
   onSample(cb: (s: GazeSample) => void): () => void
   onStatus(cb: (s: TrackerStatus, error?: string) => void): () => void
   status(): TrackerStatus
   /** 캘리브레이션용 클릭 좌표 입력 */
   recordPoint(x: number, y: number): void
   clearCalibration(): Promise<void>
-  /** One Euro 파라미터 튜닝 */
-  tuneFilter(opts: { mincutoff?: number; beta?: number; dcutoff?: number }): void
 }
 
 function waitForWebGazer(timeoutMs = 8000): Promise<WebGazerAPI> {
@@ -185,14 +181,6 @@ export function createGazeTracker(): GazeTracker {
     setStatus('stopped')
   }
 
-  function pause(): void {
-    wg?.pause()
-  }
-
-  function resume(): void {
-    wg?.resume()
-  }
-
   function recordPoint(x: number, y: number): void {
     wg?.recordScreenPosition(x, y, 'click')
   }
@@ -203,15 +191,9 @@ export function createGazeTracker(): GazeTracker {
     filter.reset()
   }
 
-  function tuneFilter(opts: { mincutoff?: number; beta?: number; dcutoff?: number }): void {
-    filter.tune(opts)
-  }
-
   return {
     start,
     stop,
-    pause,
-    resume,
     onSample(cb) {
       sampleListeners.add(cb)
       return () => sampleListeners.delete(cb)
@@ -224,7 +206,6 @@ export function createGazeTracker(): GazeTracker {
     },
     status: () => status,
     recordPoint,
-    clearCalibration,
-    tuneFilter
+    clearCalibration
   }
 }

@@ -17,6 +17,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { Edge } from '../perception/edge-detector'
+import { railThickness } from '../perception/geometry'
 
 export type GazeBarItem = {
   id: string
@@ -52,9 +53,7 @@ type Props = {
 
 /** 가장자리에서 사이드바가 차지하는 픽셀 폭 / 길이 계산 */
 function computeGeometry(edge: Edge, viewport: { w: number; h: number }) {
-  const minSide = Math.min(viewport.w, viewport.h)
-  // 단축의 ~5.5%. clamp 로 너무 작/큰 화면에서도 적당히.
-  const thickness = Math.max(56, Math.min(80, minSide * 0.06))
+  const thickness = railThickness(viewport)
   // 변의 60% 길이
   const isVertical = edge === 'left' || edge === 'right'
   const majorAxis = isVertical ? viewport.h : viewport.w

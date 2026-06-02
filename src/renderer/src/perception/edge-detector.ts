@@ -29,6 +29,7 @@ import {
   type IntentSample,
   type Edge
 } from './intent-score'
+import { railThickness } from './geometry'
 
 export type { Edge } from './intent-score'
 export type EdgeState = 'idle' | 'dwelling' | 'entered'
@@ -141,7 +142,6 @@ export class EdgeDetector {
   private exitGraceAccum = 0
   private enteredAt: number | null = null
   private lastNow: number | null = null
-  private lastPoint: Point | null = null
 
   // ===== snapping FSM 상태 =====
   private snapState: SnappingState = 'idle'
@@ -176,7 +176,6 @@ export class EdgeDetector {
     this.exitGraceAccum = 0
     this.enteredAt = null
     this.lastNow = null
-    this.lastPoint = null
 
     this.snapState = 'idle'
     this.snapCurrentEdge = null
@@ -263,7 +262,6 @@ export class EdgeDetector {
     }
 
     this.lastNow = now
-    this.lastPoint = point
     return event
   }
 
@@ -336,7 +334,6 @@ export class EdgeDetector {
     }
 
     this.lastNow = now
-    this.lastPoint = point
     return event
   }
 
@@ -394,12 +391,6 @@ export class EdgeDetector {
 // ============================================================
 // Rail / snap utilities — snapping mode 전용
 // ============================================================
-
-/** GazeBar.tsx 의 computeGeometry 와 같은 thickness 산식. */
-function railThickness(vp: Viewport): number {
-  const minSide = Math.min(vp.w, vp.h)
-  return Math.max(56, Math.min(80, minSide * 0.06))
-}
 
 /**
  * edge 의 rail (1D 트랙) 의 perpendicular 좌표.

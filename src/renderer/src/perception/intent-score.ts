@@ -164,11 +164,6 @@ export class IntentTracker {
     this.lastSample.approachVelocity = 0
   }
 
-  /** 가장 최근에 계산된 sample (외부에서 RAF 보강용으로 조회). */
-  snapshot(): IntentSample {
-    return this.lastSample
-  }
-
   /**
    * 매 frame 호출. 내부적으로 dt 계산.
    * gaze=null 또는 음수 좌표 → 점진 감쇠.

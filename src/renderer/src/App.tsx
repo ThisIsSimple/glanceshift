@@ -52,7 +52,6 @@ const ZERO_HEAD: HeadSample = {
   t: 0,
   detected: false,
   iris: null,
-  irisDebug: null,
   landmarkCount: 0
 }
 

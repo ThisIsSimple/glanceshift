@@ -19,6 +19,7 @@
 
 import { memo } from 'react'
 import type { EdgeSnapshot, Edge } from '../perception/edge-detector'
+import { railThickness } from '../perception/geometry'
 
 type Props = {
   /** 진입 band 폭 비율 (filtered/raw 의 enterFrac) */
@@ -260,9 +261,7 @@ function SnappingZones({
   )
 }
 
-/** GazeBar.tsx 및 edge-detector railPosition 와 동일한 산식의 thickness/2. */
+/** rail line 위치 = 변에서 thickness/2 안쪽 (GazeBar 중심선과 일치). */
 function railThicknessHalfPx(viewport: { w: number; h: number }): number {
-  const minSide = Math.min(viewport.w, viewport.h)
-  const thickness = Math.max(56, Math.min(80, minSide * 0.06))
-  return thickness / 2
+  return railThickness(viewport) / 2
 }

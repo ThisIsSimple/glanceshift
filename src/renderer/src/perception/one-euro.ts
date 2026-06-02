@@ -91,11 +91,4 @@ export class OneEuro2D {
     this.fx.reset()
     this.fy.reset()
   }
-  tune(opts: { mincutoff?: number; beta?: number; dcutoff?: number }): void {
-    for (const f of [this.fx, this.fy]) {
-      if (opts.mincutoff != null) f.mincutoff = opts.mincutoff
-      if (opts.beta != null) f.beta = opts.beta
-      if (opts.dcutoff != null) f.dcutoff = opts.dcutoff
-    }
-  }
 }

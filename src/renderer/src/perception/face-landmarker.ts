@@ -16,10 +16,9 @@
 
 import { OneEuroFilter } from './one-euro'
 import type { HeadPose } from './euler'
-import { computeNicEc, getIrisDebugPoints, type IrisFeature } from './nic-ec'
+import { computeNicEc, type IrisFeature } from './nic-ec'
 
 type Landmark = [number, number, number]
-export type IrisDebug = ReturnType<typeof getIrisDebugPoints>
 
 // MediaPipe FaceMesh 의 478 landmark 중 head pose 추출에 쓸 인덱스
 // (WebGazer 의 facemesh.mjs 주석에 따라 "left/right" 는 subject 기준이다)
@@ -39,8 +38,6 @@ export type HeadSample = HeadPose & {
   detected: boolean
   /** refineLandmarks=true 일 때만 채워짐 (478 landmarks). null 이면 iris 피처 없음. */
   iris: IrisFeature | null
-  /** HUD 시각화용 raw 좌표 — production 에선 안 씀 */
-  irisDebug: IrisDebug | null
   /** 본 프레임의 face mesh landmark 개수 (468 vs 478 디버깅용) */
   landmarkCount: number
 }
@@ -53,7 +50,6 @@ export interface HeadTracker {
   onSample(cb: (s: HeadSample) => void): () => void
   onStatus(cb: (s: HeadTrackerStatus, error?: string) => void): () => void
   status(): HeadTrackerStatus
-  tuneFilter(opts: { mincutoff?: number; beta?: number; dcutoff?: number }): void
 }
 
 /**
@@ -162,7 +158,6 @@ export function createHeadTracker(): HeadTracker {
         lastLandmarks = positions
         const pose = computeHeadPose(positions)
         const iris = computeNicEc(positions)         // 478 미만이면 null
-        const irisDebug = iris ? getIrisDebugPoints(positions) : null
         const t = performance.now()
         if (pose) {
           const sample: HeadSample = {
@@ -175,7 +170,6 @@ export function createHeadTracker(): HeadTracker {
             t,
             detected: true,
             iris,
-            irisDebug,
             landmarkCount: positions.length
           }
           sampleListeners.forEach((cb) => cb(sample))
@@ -193,7 +187,6 @@ export function createHeadTracker(): HeadTracker {
           t: performance.now(),
           detected: false,
           iris: null,
-          irisDebug: null,
           landmarkCount: 0
         })
       )
@@ -237,13 +230,6 @@ export function createHeadTracker(): HeadTracker {
       cb(status)
       return () => statusListeners.delete(cb)
     },
-    status: () => status,
-    tuneFilter(opts) {
-      for (const f of [fYaw, fPitch, fRoll]) {
-        if (opts.mincutoff != null) f.mincutoff = opts.mincutoff
-        if (opts.beta != null) f.beta = opts.beta
-        if (opts.dcutoff != null) f.dcutoff = opts.dcutoff
-      }
-    }
+    status: () => status
   }
 }
