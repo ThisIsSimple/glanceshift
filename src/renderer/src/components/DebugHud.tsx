@@ -24,8 +24,8 @@ type Props = {
   sliderValues?: Record<string, number>
   /** 조이스틱 적분 상태 — engage 중에만 (rate: value/s, active: 적분 중) */
   sliderDebug?: { rate: number; active: boolean; yawRate: number } | null
-  /** engagement 유지/이탈 상태 — select 중에만 (reason: 유지 사유, idleMs: 비활동 누적) */
-  engageDebug?: { reason: 'active' | 'zone' | 'idle'; idleMs: number } | null
+  /** engagement 유지/이탈 상태 — select 중에만 (operating: 머리 기울임=조작중, uprightMs/thresholdMs: 해제 카운트) */
+  engageDebug?: { operating: boolean; uprightMs: number; thresholdMs: number } | null
 }
 
 function fmtDeg(v: number): string {
@@ -327,17 +327,13 @@ function DebugHudImpl({
           <span
             className="value"
             style={{
-              color:
-                engageDebug.reason === 'idle'
-                  ? '#ffb084'
-                  : engageDebug.reason === 'active'
-                    ? '#7be38a'
-                    : '#5aa9ff',
+              color: engageDebug.operating ? '#7be38a' : '#ffb084',
               fontVariantNumeric: 'tabular-nums'
             }}
           >
-            {engageDebug.reason}
-            {engageDebug.reason === 'idle' ? ` · ${engageDebug.idleMs.toFixed(0)}ms` : ''}
+            {engageDebug.operating
+              ? 'operating'
+              : `upright · ${engageDebug.uprightMs.toFixed(0)}/${engageDebug.thresholdMs}ms`}
           </span>
         </div>
       )}

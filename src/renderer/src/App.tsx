@@ -8,8 +8,8 @@
  * 핵심 책임:
  *   · gaze/head/edge state 를 컴포넌트 트리로 prop 전달
  *   · EdgeDetector (snapping rail FSM) 갱신 (sample useEffect + RAF tick)
- *   · 활동 기반 engagement — 조작 중(head-tilt active)이거나 시선이 zone 안인 동안 유지,
- *     둘 다 없으면 IDLE_RELEASE_MS 후 해제 (이탈 판단)
+ *   · engagement 해제 — 머리가 기울어져 있으면 조작 중으로 유지(조이스틱), 머리가 꼿꼿(upright)
+ *     해지면 시선 위치별 임계(zone 밖 1.2s / zone 안 3s) 후 해제 (이탈 판단)
  *   · OS bridge (volume/brightness) throttled push + commit on release
  */
 
@@ -58,13 +58,21 @@ const ZERO_HEAD: HeadSample = {
 const SELECT_DWELL_MS = 1000
 
 /**
- * 조작 이탈 판단 — idle grace (ms).
- * 선택(engage) 후 고정 시간으로 끊지 않는다. 대신 "조작 중(head-tilt active)" 이거나
- * "시선이 가장자리 zone 안(rail entered)" 인 동안은 무한히 유지하고, 둘 다 아닌 상태가
- * 이 시간(IDLE_RELEASE_MS) 동안 지속될 때만 해제한다 (= 사용자가 조작에서 이탈).
- * (이전의 고정 LATCH_MS 3초 타임아웃을 대체. plans/2026-06-02-1518-engagement-and-dynamic-zone.md Phase 1)
+ * 조작 이탈 판단 (engagement 해제).
+ *
+ * 조이스틱 ramp(값 증감)는 engage 시점 neutral 기준이지만, "이탈" 판정은 그것과 분리한다.
+ * 머리를 (움직이지 않아도) 기울이고 있으면 조이스틱처럼 계속 조작 중으로 본다. 따라서 이탈은
+ * **머리가 꼿꼿이(절대 기준) 서 있는가** + 시선 위치로 판단한다:
+ *
+ *   upright = |head roll (절대)| <= UPRIGHT_MAX_DEG
+ *   - 시선 zone 밖  + upright 가 RELEASE_GAZE_OUT_MS 지속 → 해제
+ *   - 시선 zone 안  + upright 가 RELEASE_GAZE_IN_MS  지속 → 해제 (오래 안 만지면)
+ *
+ * (plans/2026-06-02-1518-engagement-and-dynamic-zone.md — 활동 기준 재정의)
  */
-const IDLE_RELEASE_MS = 1200
+const UPRIGHT_MAX_DEG = 6
+const RELEASE_GAZE_OUT_MS = 1200
+const RELEASE_GAZE_IN_MS = 3000
 
 export function App(): JSX.Element {
   const [debugVisible, setDebugVisible] = useState(true)
@@ -103,10 +111,10 @@ export function App(): JSX.Element {
 
   const [gazeBarHoverId, setGazeBarHoverId] = useState<string | null>(null)
 
-  // ===== Dwell-to-select + Activity-based engagement =====
+  // ===== Dwell-to-select + Engagement(upright 기반 해제) =====
   // 1) hover → 같은 항목 위 SELECT_DWELL_MS 동안 시선 유지 시 selectedControlId 로 commit
-  // 2) selected 후에는 "조작 중(head-tilt active)" 이거나 "시선이 zone 안(rail entered)" 인 동안
-  //    무한히 유지. 둘 다 아닌 상태가 IDLE_RELEASE_MS 지속될 때만 해제 (이탈 판단).
+  // 2) selected 후 머리를 기울이고 있으면(움직이지 않아도) 조작 중으로 무한 유지. 머리가
+  //    꼿꼿(upright)해지면 시선 위치별 임계(zone 밖 1.2s / zone 안 3s) 후 해제. (§8b)
   // 3) selected 중에도 다른 항목에 다시 SELECT_DWELL_MS dwell 하면 새 선택으로 전환.
   //
   // 짧은 hover 는 "탐색", 1초 dwell 은 "선택 의도" 로 해석한다.
@@ -115,8 +123,6 @@ export function App(): JSX.Element {
   const [dwellProgress, setDwellProgress] = useState<{ itemId: string; progress: number } | null>(null)
   /** 현재 dwell 누적 중인 hover 시작 정보. progress 는 setInterval 로 계산. */
   const hoverDwellRef = useRef<{ itemId: string; startedAt: number } | null>(null)
-  /** 마지막으로 engagement 이 "살아있던"(active 조작 or rail entered) 시각 (ms). idle 해제 판단용. */
-  const lastEngageActivityRef = useRef(0)
 
   // 항목별 저장된 슬라이더 값 (commit 된 값) — OS bridge 가 이걸 읽어 적용
   const [sliderValues, setSliderValues] = useState<Record<string, number>>({
@@ -402,11 +408,10 @@ export function App(): JSX.Element {
       setDwellProgress({ itemId: dwell.itemId, progress })
 
       if (progress >= 1) {
-        // commit — engagement 시작. 해제는 활동 기반 idle 모니터가 담당(고정 타이머 없음).
+        // commit — engagement 시작. 해제는 upright 기반 모니터가 담당(고정 타이머 없음).
         const commitId = dwell.itemId
         hoverDwellRef.current = null
         setDwellProgress(null)
-        lastEngageActivityRef.current = performance.now()
         setSelectedControlId(commitId)
       }
     }, 50)
@@ -476,35 +481,46 @@ export function App(): JSX.Element {
     }
   }, [engaged, head.t, head.fRoll, head.fYaw, selectedControlId])
 
-  // 8b) Engagement idle 모니터 — "조작 중(active)" 또는 "시선 zone 안(rail entered)" 이
-  //     IDLE_RELEASE_MS 동안 모두 없으면 해제(이탈). 고정 타이머가 아니라 활동 기반.
+  // 8b) Engagement 해제 모니터 — "머리가 꼿꼿(upright)" 이 시선 위치별 임계 시간 지속되면 해제.
+  //     머리를 기울이고 있으면(움직이지 않아도) 조작 중으로 보고 유지(조이스틱).
   //     interval 안에서 최신 값을 읽도록 ref 로 미러.
   const edgeStateRef = useRef(edgeSnapshot.state)
   edgeStateRef.current = edgeSnapshot.state
-  const tiltActiveRef = useRef(false)
-  tiltActiveRef.current = sliderDebug?.active ?? false
+  const headRollRef = useRef(0)
+  headRollRef.current = head.fRoll
+  const headDetectedRef = useRef(false)
+  headDetectedRef.current = head.detected
+  /** 머리가 upright 상태로 들어선 시각(ms). null = 지금 기울이고 있음(조작 중). */
+  const uprightSinceRef = useRef<number | null>(null)
   const [engageDebug, setEngageDebug] = useState<{
-    reason: 'active' | 'zone' | 'idle'
-    idleMs: number
+    operating: boolean
+    uprightMs: number
+    thresholdMs: number
   } | null>(null)
 
   useEffect(() => {
     if (selectedControlId == null) {
       setEngageDebug(null)
+      uprightSinceRef.current = null
       return
     }
     const id = window.setInterval(() => {
       const now = performance.now()
       const inZone = edgeStateRef.current === 'entered'
-      const active = tiltActiveRef.current
-      if (active || inZone) {
-        lastEngageActivityRef.current = now
-        setEngageDebug({ reason: active ? 'active' : 'zone', idleMs: 0 })
+      // 조작 중 = 얼굴 검출 + 머리가 upright 범위를 벗어나 기울어짐 (절대 roll 기준).
+      const operating =
+        headDetectedRef.current && Math.abs(headRollRef.current) > UPRIGHT_MAX_DEG
+      const thresholdMs = inZone ? RELEASE_GAZE_IN_MS : RELEASE_GAZE_OUT_MS
+
+      if (operating) {
+        uprightSinceRef.current = null
+        setEngageDebug({ operating: true, uprightMs: 0, thresholdMs })
         return
       }
-      const idleMs = now - lastEngageActivityRef.current
-      setEngageDebug({ reason: 'idle', idleMs })
-      if (idleMs > IDLE_RELEASE_MS) {
+      if (uprightSinceRef.current == null) uprightSinceRef.current = now
+      const uprightMs = now - uprightSinceRef.current
+      setEngageDebug({ operating: false, uprightMs, thresholdMs })
+      if (uprightMs >= thresholdMs) {
         setSelectedControlId(null)
       }
     }, 150)
