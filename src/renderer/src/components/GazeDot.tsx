@@ -7,7 +7,6 @@
  *      선택하고 있는지 즉각 피드백. 디버그 HUD 와 독립적으로 노출 (조작 중요 단서).
  *
  * snapAnimating=true (lock 진입 ~220ms) 일 때는 rail 로 흡수되는 transition.
- * snap=true (snapping mode 전반) 이면 도트 자체에 옅은 강조.
  */
 
 import { memo } from 'react'
@@ -17,8 +16,6 @@ type Props = {
   y: number
   /** 디버그 HUD 도트 본체 표시 여부 (⌘⇧D). ring 은 이 값과 무관하게 dwellProgress 로 결정. */
   visible: boolean
-  /** snapping mode 가 활성화된 동안 true. 도트에 약간의 강조. */
-  snap?: boolean
   /** lock 진입 직후 ~220ms 동안 true. rail 로 끌리는 강한 transition. */
   snapAnimating?: boolean
   /**
@@ -32,7 +29,7 @@ const RING_RADIUS = 22 // 도트 (직경 14) 보다 충분히 큰 반지름 — 
 const RING_STROKE = 3
 const RING_BOX = (RING_RADIUS + RING_STROKE) * 2 // SVG viewBox 크기
 
-function GazeDotImpl({ x, y, visible, snap, snapAnimating, dwellProgress }: Props): JSX.Element | null {
+function GazeDotImpl({ x, y, visible, snapAnimating, dwellProgress }: Props): JSX.Element | null {
   if (x < 0 || y < 0) return null
 
   const showDot = visible
@@ -45,7 +42,7 @@ function GazeDotImpl({ x, y, visible, snap, snapAnimating, dwellProgress }: Prop
         <div
           className={[
             'gaze-dot',
-            snap ? 'snap-active' : '',
+            'snap-active',
             snapAnimating ? 'snapping-in' : ''
           ]
             .filter(Boolean)

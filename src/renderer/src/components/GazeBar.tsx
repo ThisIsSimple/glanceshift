@@ -41,8 +41,6 @@ type Props = {
   valuesById?: Record<string, number>
   /** hover 중인 항목의 *live* 값 (engaged 상태 — head tilt 로 실시간 변하는 값) */
   liveValue?: number | null
-  /** true 면 hover 계산이 deterministic — 항상 가장 가까운 항목 (반경 제한 없이). Mode 2/3 용 */
-  snapHover?: boolean
   /**
    * Selected (1초 dwell 로 commit 된) 항목 — head tilt 조작 권한이 있는 control.
    * 시각 강조만 한다 (`.gazebar-item.locked`). hover 결정은 시선 기반 그대로 — 사용자가
@@ -74,7 +72,6 @@ function GazeBarImpl({
   onHoverChange,
   valuesById,
   liveValue,
-  snapHover,
   lockedItemId
 }: Props): JSX.Element | null {
   // edge 가 null 이면 짧은 exit 애니메이션 후 unmount
@@ -117,36 +114,19 @@ function GazeBarImpl({
   // hover 결정은 항상 gaze 기반 — lockedItemId 의 영향 받지 않음.
   // 이전 구현은 lockedItemId 가 있으면 hoveredId 를 그쪽으로 강제했는데, 그러면 3초 latch
   // 동안 다른 항목 탐색 자체가 불가능했다 (재선택 dwell 도 못 누적). 분리한다.
+  //
+  // Deterministic 양자화: 항상 가장 가까운 항목 (반경 제한 없이) — along-edge 정확도가
+  // 떨어져도 hover 가 결정적으로 정해지도록.
   const hoveredId = useMemo(() => {
     if (!geom || !gazePoint || !items.length) return null
     const isVertical = geom.isVertical
     const major = isVertical ? gazePoint.y : gazePoint.x
-
-    // 항목들의 주축 중심 좌표
     const start = isVertical ? geom.top! : geom.left!
     const itemSize = geom.length / items.length
-
-    if (snapHover) {
-      // Deterministic: 양자화. 항상 가장 가까운 항목 (반경 제한 없이).
-      // Mode 2/3: along-edge 정확도 손실에도 hover 가 결정적.
-      const rel = (major - start) / itemSize
-      const idx = Math.max(0, Math.min(items.length - 1, Math.round(rel - 0.5)))
-      return items[idx].id
-    }
-
-    // Classic: 항목 중심 ± 반경 안에 들어와야 hover
-    let bestId: string | null = null
-    let bestDist = Infinity
-    for (let i = 0; i < items.length; i++) {
-      const center = start + itemSize * (i + 0.5)
-      const dist = Math.abs(major - center)
-      if (dist < itemSize / 2 && dist < bestDist) {
-        bestDist = dist
-        bestId = items[i].id
-      }
-    }
-    return bestId
-  }, [geom, gazePoint, items, snapHover])
+    const rel = (major - start) / itemSize
+    const idx = Math.max(0, Math.min(items.length - 1, Math.round(rel - 0.5)))
+    return items[idx].id
+  }, [geom, gazePoint, items])
 
   // hover 변화 알림
   useEffect(() => {

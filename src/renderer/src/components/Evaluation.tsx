@@ -19,13 +19,7 @@ import {
   type PerTargetResult,
   type AggregateResult
 } from '../perception/eval-stats'
-import {
-  EdgeDetector,
-  EDGE_MODE_PROFILES,
-  type Edge,
-  type ModeLabel,
-  type EdgeEvent
-} from '../perception/edge-detector'
+import { EdgeDetector, type Edge, type EdgeEvent } from '../perception/edge-detector'
 
 type EvalType = 'gaze' | 'trigger'
 
@@ -34,8 +28,10 @@ type Phase = 'intro' | 'running' | 'free30s' | 'complete'
 type Props = {
   gazePoint: { x: number; y: number } | null
   onDone: () => void
-  edgeMode?: ModeLabel | string
 }
+
+/** 단일 모드 — CSV/condition 라벨용 고정 식별자. */
+const MODE = 'snapping'
 
 const N_ROWS = 5
 const N_COLS = 5
@@ -106,12 +102,12 @@ type TriggerResult = {
   ftrDurationMs: number
 }
 
-export function Evaluation({ gazePoint, onDone, edgeMode }: Props): JSX.Element {
+export function Evaluation({ gazePoint, onDone }: Props): JSX.Element {
   const [evalType, setEvalType] = useState<EvalType>('gaze')
   const [phase, setPhase] = useState<Phase>('intro')
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight })
   const [pose, setPose] = useState<string>('baseline-frontal')
-  const condition = edgeMode ? `${edgeMode}__${pose}` : pose
+  const condition = `${MODE}__${pose}`
   const [screenWidthCm, setScreenWidthCm] = useState<string>('')
   const [screenDistanceCm, setScreenDistanceCm] = useState<string>('')
 
@@ -344,7 +340,7 @@ export function Evaluation({ gazePoint, onDone, edgeMode }: Props): JSX.Element 
       cancelAnimationFrame(raf)
       if (interval != null) clearInterval(interval)
       const result: TriggerResult = {
-        mode: edgeMode ?? 'unknown',
+        mode: MODE,
         pose,
         startedAt: startedAtRef.current,
         trials: triggerTrials,
@@ -360,7 +356,7 @@ export function Evaluation({ gazePoint, onDone, edgeMode }: Props): JSX.Element 
       if (interval != null) clearInterval(interval)
       clearTimeout(endTimer)
     }
-  }, [phase, viewport, edgeMode, pose, triggerTrials])
+  }, [phase, viewport, pose, triggerTrials])
 
   // ============================================================
   // 액션
@@ -376,11 +372,8 @@ export function Evaluation({ gazePoint, onDone, edgeMode }: Props): JSX.Element 
     setFtrCountdownMs(FREE_30S_MS)
     startedAtRef.current = Date.now()
     if (evalType === 'trigger') {
-      // mode 별 detector 인스턴스 새로 생성 (App 과 독립)
-      const profile = (edgeMode && (edgeMode as ModeLabel) in EDGE_MODE_PROFILES)
-        ? EDGE_MODE_PROFILES[edgeMode as ModeLabel]
-        : EDGE_MODE_PROFILES.filtered
-      triggerDetectorRef.current = new EdgeDetector(profile)
+      // detector 인스턴스 새로 생성 (App 과 독립, 기본 snap config)
+      triggerDetectorRef.current = new EdgeDetector()
     }
     setPhase('running')
   }
@@ -652,7 +645,7 @@ export function Evaluation({ gazePoint, onDone, edgeMode }: Props): JSX.Element 
     return (
       <div className="eval-root">
         <div className="eval-prompt eval-prompt-wide">
-          <h3>완료 — {edgeMode}__{pose}</h3>
+          <h3>완료 — {condition}</h3>
           <div className="eval-stats">
             <div className="eval-stat">
               <span className="eval-stat-label">TSR</span>

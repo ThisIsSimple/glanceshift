@@ -157,20 +157,6 @@ function registerShortcuts(): void {
     overlayWindow?.webContents.send('glanceshift:toggle-evaluation')
   })
 
-  // Edge Mode 전환 — 비교 분석용
-  //   filtered : OneEuro-filtered + classic FSM (baseline)
-  //   raw      : unfiltered + classic FSM (필터 기여도 control)
-  //   snapping : OneEuro-filtered + IntentTracker + RailFSM + UI snap
-  globalShortcut.register('CommandOrControl+Shift+1', () => {
-    overlayWindow?.webContents.send('glanceshift:set-edge-mode', 'filtered')
-  })
-  globalShortcut.register('CommandOrControl+Shift+2', () => {
-    overlayWindow?.webContents.send('glanceshift:set-edge-mode', 'raw')
-  })
-  globalShortcut.register('CommandOrControl+Shift+3', () => {
-    overlayWindow?.webContents.send('glanceshift:set-edge-mode', 'snapping')
-  })
-
   // DevTools (분리 모드)
   globalShortcut.register('CommandOrControl+Shift+I', () => {
     const wc = overlayWindow?.webContents
