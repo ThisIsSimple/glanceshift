@@ -89,91 +89,78 @@
   z-index: 101;
 }
 
-/* ===== GazeBar — 가장자리 도킹 사이드바 ===== */
+/* ===== GazeBar — iPad 독 스타일 플로팅 독 ===== */
 .gazebar {
-  background: rgba(15, 18, 24, 0.62);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(28, 30, 38, 0.55);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 26px;                 /* 크게 둥근 알약 */
   box-shadow:
-    0 2px 16px rgba(0, 0, 0, 0.35),
-    0 0 0 1px rgba(90, 169, 255, 0.06);
-  padding: 8px;
-  gap: 4px;
+    0 12px 40px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10); /* 윗면 하이라이트 */
+  padding: 12px;                       /* JS DOCK.padding 과 일치 */
+  gap: 10px;                           /* JS DOCK.gap 과 일치 */
   pointer-events: none;  /* 메인 작업 흐름 방해 안 함 — 시선/머리로만 조작 */
   z-index: 7000;
   user-select: none;
 }
 
-/* 가장자리에 따라 모서리 둥글기 조정 (안쪽만 둥글게) */
-.gazebar { border-radius: 18px; }
-
 .gazebar-item {
+  position: relative;
+  flex: 1;                              /* 슬롯을 꽉 채워 직사각형 타일이 됨 */
   display: flex;
+  flex-direction: column;               /* 아이콘 위, 값 아래 (변 방향 무관) */
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  border-radius: 12px;
-  padding: 6px 8px;
-  color: rgba(255, 255, 255, 0.65);
+  gap: 2px;
+  border-radius: 16px;                  /* squircle 타일 */
+  overflow: hidden;                     /* fill 을 둥근 모서리에 맞춰 클립 */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
   transition:
-    background 160ms ease,
-    color 160ms ease,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 160ms ease,
-    transform 160ms ease;
+    color 160ms ease;
 }
 
+/* 시선 hover — dock magnification 느낌 (직사각형이라 과하지 않게) */
 .gazebar-item.hover {
-  background: rgba(90, 169, 255, 0.16);
-  color: var(--gs-text);
-  box-shadow: inset 0 0 0 1px rgba(90, 169, 255, 0.55);
-  transform: scale(1.03);
-}
-
-/* Selected (1s dwell 로 commit 된) 항목 — 조작 권한 보유 단서 (강한 강조).
-   hover 와 동시일 수 있으나 locked 가 우선해서 더 진하게 보임. */
-.gazebar-item.locked {
-  background: rgba(123, 227, 138, 0.18);
+  transform: scale(1.06);
   color: var(--gs-text);
   box-shadow:
-    inset 0 0 0 2px rgba(123, 227, 138, 0.75),
-    0 0 18px rgba(123, 227, 138, 0.35);
+    inset 0 0 0 1.5px rgba(90, 169, 255, 0.7),
+    0 6px 18px rgba(90, 169, 255, 0.28);
+  z-index: 1;
+}
+
+/* 1초 dwell 로 선택 확정 — 조작 권한 단서 */
+.gazebar-item.locked {
+  color: var(--gs-text);
+  box-shadow:
+    inset 0 0 0 2px rgba(123, 227, 138, 0.8),
+    0 0 22px rgba(123, 227, 138, 0.4);
 }
 
 .gazebar-icon {
-  font-size: 22px;
+  font-size: 26px;
   line-height: 1;
-  filter: grayscale(0.1);
-}
-.gazebar-item.hover .gazebar-icon {
-  filter: none;
 }
 
-.gazebar-label {
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.7;
-}
+/* 독에선 라벨 숨김 — 아이콘+퍼센트로 충분. 보이고 싶으면 이 한 줄 지우기. */
+.gazebar-label { display: none; }
 
-.gazebar-hint {
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  color: var(--gs-accent);
-  margin-left: 4px;
-}
-
-/* 항목 값 표시 — 작은 퍼센트 텍스트 */
 .gazebar-value {
   font-size: 10px;
   letter-spacing: 0.02em;
-  color: rgba(255, 255, 255, 0.45);
-  transition: color 160ms ease, font-weight 160ms ease, transform 160ms ease;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.55);
+  transition: color 160ms ease, transform 160ms ease;
 }
 .gazebar-value.active {
-  color: var(--gs-text);
+  color: #fff;
   font-weight: 600;
-  transform: scale(1.08);
+  transform: scale(1.06);
 }
 
 /* 디버그 시선 도트 */
