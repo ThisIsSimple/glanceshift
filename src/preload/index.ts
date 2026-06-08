@@ -27,14 +27,6 @@ const api = {
   getVolume: (): Promise<number | null> =>
     ipcRenderer.invoke('glanceshift:get-volume'),
 
-  /** OS 밝기 설정 (0..1, macOS 는 brightness CLI 필요). 실패 시 null. */
-  setBrightness: (value: number): Promise<number | null> =>
-    ipcRenderer.invoke('glanceshift:set-brightness', value),
-
-  /** 현재 OS 밝기 (0..1). 읽기 실패 시 null. */
-  getBrightness: (): Promise<number | null> =>
-    ipcRenderer.invoke('glanceshift:get-brightness'),
-
   /** 평가 CSV 저장 → userData/eval-logs/<filename>. 저장된 절대 경로 반환. */
   saveEvalCsv: (filename: string, content: string): Promise<string> =>
     ipcRenderer.invoke('glanceshift:save-eval-csv', filename, content),
@@ -66,6 +58,12 @@ const api = {
     const listener = (): void => cb()
     ipcRenderer.on('glanceshift:toggle-evaluation', listener)
     return () => ipcRenderer.removeListener('glanceshift:toggle-evaluation', listener)
+  },
+
+  onToggleTestMode: (cb: () => void): (() => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('glanceshift:toggle-test-mode', listener)
+    return () => ipcRenderer.removeListener('glanceshift:toggle-test-mode', listener)
   }
 }
 

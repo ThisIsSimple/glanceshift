@@ -16,69 +16,13 @@
 import { app, BrowserWindow, globalShortcut, screen, ipcMain, session, systemPreferences, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { exec } from 'node:child_process'
-import { promisify } from 'node:util'
-import { writeFile, mkdir, access } from 'node:fs/promises'
-import { constants as FS } from 'node:fs'
+import { writeFile, mkdir } from 'node:fs/promises'
 import loudness from 'loudness'
-
-const execAsync = promisify(exec)
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 let overlayWindow: BrowserWindow | null = null
 let clickThrough = true
-
-/**
- * macOS 의 `brightness` CLI (brew install brightness) 의 절대 경로.
- * Electron 자식 프로세스의 PATH 가 GUI launch 시 /opt/homebrew/bin 을 포함하지 않는
- * 경우가 흔하므로 절대경로로 해석해 캐시한다. 앱 시작 시 1회 resolve.
- */
-let brightnessBin: string | null = null
-
-/** brew 가 설치할 만한 표준 위치들. 앞쪽이 우선. */
-const BRIGHTNESS_CANDIDATES = [
-  '/opt/homebrew/bin/brightness', // Apple Silicon brew default
-  '/usr/local/bin/brightness',    // Intel brew default
-  '/usr/bin/brightness',          // 가능성은 낮지만 fallback
-  '/opt/local/bin/brightness'     // MacPorts
-]
-
-async function resolveBrightnessBin(): Promise<string | null> {
-  if (process.platform !== 'darwin') return null
-  // 1) 표준 경로 직접 확인 — `which` 보다 빠르고 PATH 무관.
-  for (const p of BRIGHTNESS_CANDIDATES) {
-    try {
-      await access(p, FS.X_OK)
-      return p
-    } catch {
-      /* 다음 후보 */
-    }
-  }
-  // 2) 사용자의 login shell 을 통해 PATH 해석 시도 (zsh -ilc which …).
-  //    Electron 의 child env 가 빈약해도 shell rc 를 거치면 brew path 가 잡힘.
-  for (const shellCmd of [
-    `${process.env.SHELL || '/bin/zsh'} -ilc 'command -v brightness'`,
-    `/bin/zsh -ilc 'command -v brightness'`,
-    `/bin/bash -ilc 'command -v brightness'`
-  ]) {
-    try {
-      const { stdout } = await execAsync(shellCmd, { timeout: 3000 })
-      const path = stdout.trim().split('\n').pop()?.trim()
-      if (path && path.startsWith('/')) {
-        try {
-          await access(path, FS.X_OK)
-          return path
-        } catch {
-          /* exec 못함 */
-        }
-      }
-    } catch {
-      /* 다음 shell 시도 */
-    }
-  }
-  return null
-}
 
 function createOverlayWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay()
@@ -157,6 +101,11 @@ function registerShortcuts(): void {
     overlayWindow?.webContents.send('glanceshift:toggle-evaluation')
   })
 
+  // 테스트 모드(볼륨 조절 실험 + 데이터 수집) 토글
+  globalShortcut.register('CommandOrControl+Shift+T', () => {
+    overlayWindow?.webContents.send('glanceshift:toggle-test-mode')
+  })
+
   // DevTools (분리 모드)
   globalShortcut.register('CommandOrControl+Shift+I', () => {
     const wc = overlayWindow?.webContents
@@ -189,12 +138,9 @@ ipcMain.handle('glanceshift:request-camera-permission', async () => {
   return systemPreferences.askForMediaAccess('camera')
 })
 
-// ===== OS Action Bridge — Phase 7 =====
+// ===== OS Action Bridge =====
 //
-// 시스템 볼륨은 loudness 패키지 (macOS 에선 내부적으로 osascript 호출).
-// 밝기는 macOS 의 경우 `brightness` brew CLI 가 있으면 사용, 없으면 silent fail.
-//   $ brew install brightness
-// 다른 OS 는 best-effort.
+// 시스템 볼륨은 loudness 패키지 (macOS 에선 내부적으로 osascript 호출). 다른 OS 는 best-effort.
 
 ipcMain.handle('glanceshift:set-volume', async (_e, value: number) => {
   const clamped = Math.max(0, Math.min(1, value))
@@ -215,67 +161,6 @@ ipcMain.handle('glanceshift:get-volume', async () => {
   } catch {
     return null
   }
-})
-
-let brightnessWarned = false
-let lastBrightnessErrorAt = 0
-
-ipcMain.handle('glanceshift:set-brightness', async (_e, value: number) => {
-  const clamped = Math.max(0, Math.min(1, value))
-  if (process.platform !== 'darwin') return null
-
-  if (!brightnessBin) {
-    if (!brightnessWarned) {
-      brightnessWarned = true
-      // eslint-disable-next-line no-console
-      console.warn(
-        '[main] brightness binary not found. Install with `brew install brightness`.\n' +
-          '  Searched: ' +
-          BRIGHTNESS_CANDIDATES.join(', ')
-      )
-    }
-    return null
-  }
-  try {
-    // 절대경로로 호출 — PATH 의존성 제거. Apple Silicon GUI launch 에서 핵심.
-    const { stdout, stderr } = await execAsync(
-      `${brightnessBin} ${clamped.toFixed(3)}`,
-      { timeout: 3000 }
-    )
-    if (stderr && stderr.trim().length > 0) {
-      // brightness CLI 가 에러를 stderr 로 내는 경우 (외장 모니터 등)
-      // eslint-disable-next-line no-console
-      console.warn(`[main] brightness stderr: ${stderr.trim()}`)
-    }
-    if (stdout && stdout.trim().length > 0) {
-      // 정상 동작에선 보통 비어 있지만, 일부 빌드는 정보 출력
-      // eslint-disable-next-line no-console
-      console.log(`[main] brightness stdout: ${stdout.trim()}`)
-    }
-    return clamped
-  } catch (e) {
-    // 1초에 한 번씩만 로그 (spam 방지)
-    const now = Date.now()
-    if (now - lastBrightnessErrorAt > 1000) {
-      lastBrightnessErrorAt = now
-      // eslint-disable-next-line no-console
-      console.warn(`[main] setBrightness failed (${brightnessBin} ${clamped.toFixed(3)}):`, e)
-    }
-    return null
-  }
-})
-
-ipcMain.handle('glanceshift:get-brightness', async () => {
-  if (process.platform !== 'darwin' || !brightnessBin) return null
-  try {
-    const { stdout } = await execAsync(`${brightnessBin} -l`, { timeout: 3000 })
-    // 출력 예: "display 0: brightness 0.500000"
-    const match = stdout.match(/brightness\s+([\d.]+)/)
-    if (match) return parseFloat(match[1])
-  } catch {
-    /* CLI 없거나 표준 출력 형식 불일치 — null 반환, App 은 기본값 사용 */
-  }
-  return null
 })
 
 // 평가 CSV 저장 — userData/eval-logs/<filename>.csv
@@ -313,21 +198,6 @@ app.whenReady().then(async () => {
   // macOS dock 숨김 (오버레이 앱은 dock 노이즈를 줄임)
   if (process.platform === 'darwin' && app.dock) {
     app.dock.hide()
-  }
-
-  // brightness CLI 절대경로 해석 — GUI launch 시 brew PATH 가 없는 경우 대비.
-  // 결과는 모듈 변수 brightnessBin 에 캐시. setBrightness 가 매번 이 값을 사용.
-  brightnessBin = await resolveBrightnessBin()
-  if (process.platform === 'darwin') {
-    if (brightnessBin) {
-      // eslint-disable-next-line no-console
-      console.log(`[main] brightness binary resolved: ${brightnessBin}`)
-    } else {
-      // eslint-disable-next-line no-console
-      console.warn(
-        '[main] brightness binary NOT found. Install with `brew install brightness`.'
-      )
-    }
   }
 
   installPermissionHandlers()

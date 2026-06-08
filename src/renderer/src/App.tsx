@@ -10,7 +10,7 @@
  *   · EdgeDetector (snapping rail FSM) 갱신 (sample useEffect + RAF tick)
  *   · engagement 해제 — 머리가 기울어져 있으면 조작 중으로 유지(조이스틱), 머리가 꼿꼿(upright)
  *     해지면 시선 위치별 임계(zone 밖 1.2s / zone 안 3s) 후 해제 (이탈 판단)
- *   · OS bridge (volume/brightness) throttled push + commit on release
+ *   · OS bridge (volume) throttled push + commit on release
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -20,6 +20,7 @@ import { Calibration } from './components/Calibration'
 import { EdgeZones } from './components/EdgeZones'
 import { GazeBar, type GazeBarItem } from './components/GazeBar'
 import { Evaluation } from './components/Evaluation'
+import { TestMode } from './components/TestMode'
 import { createGazeTracker, type GazeSample, type TrackerStatus } from './perception/webgazer'
 import {
   createHeadTracker,
@@ -30,11 +31,9 @@ import { EdgeDetector, type Edge, type EdgeSnapshot } from './perception/edge-de
 import { DEFAULT_SNAP_CONFIG } from './perception/intent-score'
 import { SliderIntentMapper, DEFAULT_SLIDER_CONFIG } from './perception/slider-mapper'
 
-// GazeBar 의 후보 항목. Phase 5 에서 머리 기울임으로 볼륨·밝기 slider 연결.
-const GAZEBAR_ITEMS: GazeBarItem[] = [
-  { id: 'volume', label: 'volume', icon: '🔊' },
-  { id: 'brightness', label: 'brightness', icon: '☀️' }
-]
+// GazeBar 의 후보 항목. 머리 기울임으로 볼륨 slider 연결.
+// (밝기 항목은 볼륨 단일 실험을 위해 제거 — 단일 항목이면 computeGeometry 가 자동 reflow.)
+const GAZEBAR_ITEMS: GazeBarItem[] = [{ id: 'volume', label: 'volume', icon: '🔊' }]
 
 type Point = { x: number; y: number; t: number }
 
@@ -95,6 +94,7 @@ export function App(): JSX.Element {
 
   const [calibrating, setCalibrating] = useState(false)
   const [evaluating, setEvaluating] = useState(false)
+  const [testMode, setTestMode] = useState(false)
   const trackerRef = useRef<ReturnType<typeof createGazeTracker> | null>(null)
 
   // Edge detector — IntentTracker + Rail FSM (snapping).
@@ -135,8 +135,7 @@ export function App(): JSX.Element {
 
   // 항목별 저장된 슬라이더 값 (commit 된 값) — OS bridge 가 이걸 읽어 적용
   const [sliderValues, setSliderValues] = useState<Record<string, number>>({
-    volume: 0.5,
-    brightness: 0.5
+    volume: 0.5
   })
 
   // 현재 hover/active 항목의 *live* 값 — head roll 로 매 프레임 계산
@@ -222,12 +221,14 @@ export function App(): JSX.Element {
     const offCt = window.glanceshift.onClickThroughChange((enabled) => setClickThrough(enabled))
     const offCalib = window.glanceshift.onToggleCalibration(() => setCalibrating((v) => !v))
     const offEval = window.glanceshift.onToggleEvaluation(() => setEvaluating((v) => !v))
+    const offTest = window.glanceshift.onToggleTestMode(() => setTestMode((v) => !v))
 
     return () => {
       offDebug()
       offCt()
       offCalib()
       offEval()
+      offTest()
     }
   }, [])
 
@@ -256,14 +257,15 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('mousemove', onMove)
   }, [])
 
-  // 5) 캘리브레이션 / 평가 진입 시 click-through 해제, 종료 시 복귀
+  // 5) 캘리브레이션 / 평가 / 테스트 진입 시 click-through 해제, 종료 시 복귀
+  //    (테스트는 baseline 의 Space 완료키 + intro 입력을 위해 마우스/키보드를 받아야 함)
   useEffect(() => {
-    if (calibrating || evaluating) {
+    if (calibrating || evaluating || testMode) {
       window.glanceshift.setClickThrough(false)
     } else {
       window.glanceshift.setClickThrough(true)
     }
-  }, [calibrating, evaluating])
+  }, [calibrating, evaluating, testMode])
 
   // 어떤 입력을 표시할지
   const usingGaze = trackerStatus === 'ready' && gaze.x >= 0
@@ -485,8 +487,6 @@ export function App(): JSX.Element {
 
       if (selectedControlId === 'volume') {
         window.glanceshift.setVolume(v)
-      } else if (selectedControlId === 'brightness') {
-        window.glanceshift.setBrightness(v)
       }
     }
   }, [engaged, head.t, head.fRoll, head.fYaw, selectedControlId])
@@ -545,8 +545,6 @@ export function App(): JSX.Element {
 
       if (prev === 'volume') {
         window.glanceshift.setVolume(committed)
-      } else if (prev === 'brightness') {
-        window.glanceshift.setBrightness(committed)
       }
 
       lastOsPushRef.current = { itemId: null, t: 0 } // throttle reset
@@ -555,25 +553,16 @@ export function App(): JSX.Element {
     prevActiveRef.current = selectedControlId
   }, [selectedControlId])
 
-  // 10) 마운트 시 현재 OS 값 읽어 sliderValues 동기화 — GazeBar 가 떴을 때 현재 시스템 상태를
-  // 기준선으로 보여주기 위함. brightness 는 brightness CLI 없으면 null → 기본값 유지.
+  // 10) 마운트 시 현재 OS 볼륨 읽어 sliderValues 동기화 — GazeBar 가 떴을 때 현재 시스템 상태를
+  // 기준선으로 보여주기 위함.
   useEffect(() => {
     let cancelled = false
 
     ;(async () => {
       try {
-        const [v, b] = await Promise.all([
-          window.glanceshift.getVolume(),
-          window.glanceshift.getBrightness()
-        ])
-
-        if (cancelled) return
-
-        setSliderValues((cur) => ({
-          ...cur,
-          ...(v != null ? { volume: v } : {}),
-          ...(b != null ? { brightness: b } : {})
-        }))
+        const v = await window.glanceshift.getVolume()
+        if (cancelled || v == null) return
+        setSliderValues((cur) => ({ ...cur, volume: v }))
       } catch {
         /* ignore */
       }
@@ -643,6 +632,19 @@ export function App(): JSX.Element {
         <Evaluation
           gazePoint={usingGaze ? { x: gaze.x, y: gaze.y } : null}
           onDone={() => setEvaluating(false)}
+        />
+      )}
+
+      {testMode && (
+        <TestMode
+          gazePoint={point.x >= 0 ? { x: point.x, y: point.y } : null}
+          headRoll={head.fRoll}
+          selectedControlId={selectedControlId}
+          volumeValue={sliderValues.volume ?? 0.5}
+          liveVolume={liveSliderValue}
+          edgeState={edgeSnapshot.state}
+          viewport={viewport}
+          onDone={() => setTestMode(false)}
         />
       )}
     </>
