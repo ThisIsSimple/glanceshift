@@ -58,8 +58,8 @@ type Props = {
  *   margin  : 화면 가장자리에서 띄우는 거리 (floating)
  */
 const DOCK = {
-  tile: 64,
-  slot: 240,
+  tile: 56,
+  slot: 120,
   gap: 10,
   padding: 12,
   margin: 22

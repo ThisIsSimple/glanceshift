@@ -157,11 +157,6 @@ function registerShortcuts(): void {
     overlayWindow?.webContents.send('glanceshift:toggle-evaluation')
   })
 
-  // 테스트 모드(볼륨 조절 실험 + 데이터 수집) 토글
-  globalShortcut.register('CommandOrControl+Shift+T', () => {
-    overlayWindow?.webContents.send('glanceshift:toggle-test-mode')
-  })
-
   // Edge Mode 전환 — 비교 분석용
   //   filtered : OneEuro-filtered + classic FSM (baseline)
   //   raw      : unfiltered + classic FSM (필터 기여도 control)
