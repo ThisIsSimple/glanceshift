@@ -105,26 +105,8 @@ function computeHeadPose(landmarks: Landmark[]): HeadPose | null {
   return { yaw, pitch, roll }
 }
 
-function waitForFaceMesh(timeoutMs = 15000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const start = performance.now()
-    const tick = (): void => {
-      const wg = window.webgazer
-      const tracker = wg?.getTracker?.()
-      const positions = tracker?.getPositions?.()
-      if (positions && positions.length > 460) {
-        resolve()
-        return
-      }
-      if (performance.now() - start > timeoutMs) {
-        reject(new Error('WebGazer face mesh did not produce landmarks in time'))
-        return
-      }
-      setTimeout(tick, 100)
-    }
-    tick()
-  })
-}
+/** 얼굴 미검출이 이 시간 넘게 이어지면 watchdog 가 경고를 반복 출력 (ms) */
+const FACE_WARN_INTERVAL_MS = 8000
 
 export function createHeadTracker(): HeadTracker {
   const sampleListeners = new Set<(s: HeadSample) => void>()
@@ -139,6 +121,10 @@ export function createHeadTracker(): HeadTracker {
   let rafHandle: number | null = null
   let stopped = false
   let lastLandmarks: Landmark[] | null = null
+  /** 한 번이라도 얼굴을 잡은 적 있는지 — 첫 acquire/loss 전이 로깅용 */
+  let everDetected = false
+  /** 얼굴 미검출이 길어질 때 주기적으로 경고하는 watchdog */
+  let faceWatchTimer: number | null = null
 
   function setStatus(next: HeadTrackerStatus, error?: string): void {
     status = next
@@ -151,6 +137,19 @@ export function createHeadTracker(): HeadTracker {
     const positions = tracker?.getPositions?.() as Landmark[] | null | undefined
 
     if (positions && positions.length > 460) {
+      // 얼굴 획득(또는 끊겼다 복구) → ready 로 승격. transition 시에만 listener 통지.
+      if (status !== 'ready') {
+        setStatus('ready')
+        if (!everDetected) {
+          everDetected = true
+          // eslint-disable-next-line no-console
+          console.log('[head-tracker] face acquired → ready')
+        } else {
+          // eslint-disable-next-line no-console
+          console.log('[head-tracker] face re-acquired → ready')
+        }
+      }
+
       // WebGazer 가 frame 마다 positionsArray 를 갱신하는데, 같은 reference 이지만
       // 내용이 매번 바뀐다. 변경 감지는 첫 점의 좌표 비교로 충분.
       const changed =
@@ -182,7 +181,13 @@ export function createHeadTracker(): HeadTracker {
         }
       }
     } else {
-      // 얼굴 미검출 — 필터 리셋하고 detected=false 통지
+      // 얼굴 미검출 — 필터 리셋하고 detected=false 통지.
+      // ready 였다면 waiting-video 로 강등(치명적 아님) — 얼굴이 다시 잡히면 loop 가 ready 로 복구.
+      if (status === 'ready') {
+        setStatus('waiting-video')
+        // eslint-disable-next-line no-console
+        console.log('[head-tracker] face lost → waiting-video (자동 복구 대기)')
+      }
       fYaw.reset()
       fPitch.reset()
       fRoll.reset()
@@ -201,27 +206,42 @@ export function createHeadTracker(): HeadTracker {
     rafHandle = requestAnimationFrame(loop)
   }
 
+  /**
+   * 트래커 시작. 얼굴이 잡힐 때까지 *블로킹하지 않는다* — loop() 를 바로 돌려
+   * 매 프레임 face mesh 를 polling 한다. 얼굴이 없으면 detected:false 를 emit 하며
+   * 'waiting-video' 상태를 유지하고, 얼굴이 나타나면 loop 가 'ready' 로 승격한다.
+   *
+   * 이전 구현은 15초 안에 얼굴을 못 잡으면 throw 후 영구히 죽었다(복구 불가).
+   * 이제는 참가자가 늦게 앉아도, 잠시 자리를 비웠다 돌아와도 자동 복구된다.
+   */
   async function start(): Promise<void> {
     if (status === 'ready' || status === 'waiting-video') return
     stopped = false
+    everDetected = false
     setStatus('waiting-video')
-    try {
-      await waitForFaceMesh()
-      setStatus('ready')
-      loop()
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
+
+    // 얼굴이 오래 안 잡히면 주기적으로 경고 (치명적 아님, loop 는 계속 돈다)
+    if (faceWatchTimer != null) window.clearInterval(faceWatchTimer)
+    faceWatchTimer = window.setInterval(() => {
+      if (stopped || status === 'ready') return
       // eslint-disable-next-line no-console
-      console.error('[head-tracker] start failed:', e)
-      setStatus('error', msg)
-      throw e
-    }
+      console.warn(
+        '[head-tracker] 얼굴이 감지되지 않습니다 — 카메라 앞에 얼굴이 보이는지/조명/' +
+          '다른 앱의 카메라 점유를 확인하세요. (얼굴이 잡히면 자동으로 복구됩니다)'
+      )
+    }, FACE_WARN_INTERVAL_MS)
+
+    loop()
   }
 
   function stop(): void {
     stopped = true
     if (rafHandle != null) cancelAnimationFrame(rafHandle)
     rafHandle = null
+    if (faceWatchTimer != null) {
+      window.clearInterval(faceWatchTimer)
+      faceWatchTimer = null
+    }
     setStatus('stopped')
   }
 

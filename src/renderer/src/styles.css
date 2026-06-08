@@ -143,7 +143,7 @@
 }
 
 .gazebar-icon {
-  font-size: 26px;
+  font-size: 30px;
   line-height: 1;
 }
 
@@ -151,7 +151,7 @@
 .gazebar-label { display: none; }
 
 .gazebar-value {
-  font-size: 10px;
+  font-size: 16px;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.55);
@@ -161,6 +161,51 @@
   color: #fff;
   font-weight: 600;
   transform: scale(1.06);
+}
+
+/* ===== TestMode — 볼륨 조절 실험 오버레이 ===== */
+.test-prompt {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 36px;
+  border-radius: 22px;
+  background: rgba(20, 22, 30, 0.72);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  user-select: none;
+  z-index: 8500;
+}
+.test-prompt-label {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.01em;
+}
+.test-prompt-value {
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 1.05;
+  color: #5aa9ff;
+  font-variant-numeric: tabular-nums;
+}
+.test-corner {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(20, 22, 30, 0.5);
+  padding: 4px 10px;
+  border-radius: 10px;
+  pointer-events: none;
+  user-select: none;
+  z-index: 8500;
 }
 
 /* 디버그 시선 도트 */
