@@ -68,6 +68,193 @@ function waitForWebGazer(timeoutMs = 8000): Promise<WebGazerAPI> {
  */
 const STALE_MS = 200
 const WATCHDOG_TICK_MS = 100
+const BLINK_HOLD_MS = 180
+const LONG_GAP_RESET_MS = 450
+const OFFSCREEN_MARGIN_PX = 160
+const SPIKE_DISTANCE_PX = 320
+const SPIKE_CONFIRM_MS = 60
+const SPIKE_CONFIRM_RADIUS_PX = 170
+const SPIKE_MAX_SPEED_PX_PER_MS = 4.5
+const MEDIAN_WINDOW_SIZE = 5
+const EAR_CLOSED_THRESHOLD = 0.16
+const EAR_OPEN_THRESHOLD = 0.2
+
+type Landmark = [number, number, number]
+
+type GazePoint = {
+  x: number
+  y: number
+  t: number
+}
+
+type EyeIndices = readonly [number, number, number, number, number, number]
+
+const RIGHT_EYE_EAR: EyeIndices = [33, 160, 158, 133, 153, 144]
+const LEFT_EYE_EAR: EyeIndices = [362, 385, 387, 263, 373, 380]
+
+function dist2(a: Landmark, b: Landmark): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1])
+}
+
+function eyeAspectRatio(landmarks: Landmark[], indices: EyeIndices): number | null {
+  const pts = indices.map((idx) => landmarks[idx])
+  if (pts.some((pt) => !pt)) return null
+  const [p1, p2, p3, p4, p5, p6] = pts as Landmark[]
+  const horizontal = dist2(p1, p4)
+  if (horizontal < 1) return null
+  return (dist2(p2, p6) + dist2(p3, p5)) / (2 * horizontal)
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.floor(sorted.length / 2)] ?? 0
+}
+
+class Median2DFilter {
+  private samples: Array<{ x: number; y: number }> = []
+
+  reset(): void {
+    this.samples = []
+  }
+
+  filter(x: number, y: number): { x: number; y: number } {
+    this.samples.push({ x, y })
+    if (this.samples.length > MEDIAN_WINDOW_SIZE) this.samples.shift()
+    return {
+      x: median(this.samples.map((pt) => pt.x)),
+      y: median(this.samples.map((pt) => pt.y))
+    }
+  }
+}
+
+class EyeBlinkGate {
+  private closed = false
+
+  reset(): void {
+    this.closed = false
+  }
+
+  update(landmarks: Landmark[] | null): boolean {
+    if (!landmarks || landmarks.length < 468) return false
+    const right = eyeAspectRatio(landmarks, RIGHT_EYE_EAR)
+    const left = eyeAspectRatio(landmarks, LEFT_EYE_EAR)
+    const ears = [right, left].filter((v): v is number => v != null && Number.isFinite(v))
+    if (ears.length === 0) return this.closed
+    const ear = ears.reduce((sum, v) => sum + v, 0) / ears.length
+    if (this.closed) {
+      this.closed = ear < EAR_OPEN_THRESHOLD
+    } else {
+      this.closed = ear < EAR_CLOSED_THRESHOLD
+    }
+    return this.closed
+  }
+}
+
+class BlinkSpikeFilter {
+  private filter = new OneEuro2D({ freq: 60, mincutoff: 1.0, beta: 0.007 })
+  private median = new Median2DFilter()
+  private lastAccepted: GazePoint | null = null
+  private lastOutput: GazePoint | null = null
+  private pendingJump: GazePoint | null = null
+  private missingSince: number | null = null
+
+  reset(): void {
+    this.filter.reset()
+    this.median.reset()
+    this.lastAccepted = null
+    this.lastOutput = null
+    this.pendingJump = null
+    this.missingSince = null
+  }
+
+  sample(x: number, y: number, t: number): GazeSample | null {
+    if (!this.isPlausible(x, y)) return this.holdOrStale(t)
+
+    const last = this.lastAccepted
+    const gapMs = last ? t - last.t : 0
+    this.missingSince = null
+
+    if (!last || gapMs > LONG_GAP_RESET_MS) {
+      return this.accept(x, y, t, true)
+    }
+
+    const dist = Math.hypot(x - last.x, y - last.y)
+    const dynamicLimit = Math.max(
+      SPIKE_DISTANCE_PX,
+      SPIKE_MAX_SPEED_PX_PER_MS * Math.max(16, gapMs)
+    )
+
+    if (dist <= dynamicLimit) {
+      this.pendingJump = null
+      return this.accept(x, y, t, false)
+    }
+
+    const pending = this.pendingJump
+    if (!pending || Math.hypot(x - pending.x, y - pending.y) > SPIKE_CONFIRM_RADIUS_PX) {
+      this.pendingJump = { x, y, t }
+      return this.holdOrStale(t)
+    }
+
+    if (t - pending.t >= SPIKE_CONFIRM_MS) {
+      this.pendingJump = null
+      return this.accept(x, y, t, true)
+    }
+
+    return this.holdOrStale(t)
+  }
+
+  missing(t: number): GazeSample | null {
+    this.missingSince ??= t
+    this.pendingJump = null
+    if (!this.lastOutput) return null
+    if (t - this.missingSince <= BLINK_HOLD_MS) {
+      return this.buildSample(this.lastOutput.x, this.lastOutput.y, t)
+    }
+    this.filter.reset()
+    return this.stale(t)
+  }
+
+  private accept(x: number, y: number, t: number, resetFilter: boolean): GazeSample {
+    if (resetFilter) {
+      this.filter.reset()
+      this.median.reset()
+    }
+    const med = this.median.filter(x, y)
+    const filtered = this.filter.filter(med.x, med.y, t)
+    const point = { x: filtered.x, y: filtered.y, t }
+    this.lastAccepted = { x, y, t }
+    this.lastOutput = point
+    return { x, y, fx: point.x, fy: point.y, t }
+  }
+
+  private holdOrStale(t: number): GazeSample | null {
+    if (this.lastOutput) return this.buildSample(this.lastOutput.x, this.lastOutput.y, t)
+    return null
+  }
+
+  private buildSample(x: number, y: number, t: number): GazeSample {
+    return { x, y, fx: x, fy: y, t }
+  }
+
+  private stale(t: number): GazeSample {
+    this.lastAccepted = null
+    this.lastOutput = null
+    this.pendingJump = null
+    return { x: -1, y: -1, fx: -1, fy: -1, t }
+  }
+
+  private isPlausible(x: number, y: number): boolean {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false
+    const w = window.innerWidth
+    const h = window.innerHeight
+    return (
+      x >= -OFFSCREEN_MARGIN_PX &&
+      y >= -OFFSCREEN_MARGIN_PX &&
+      x <= w + OFFSCREEN_MARGIN_PX &&
+      y <= h + OFFSCREEN_MARGIN_PX
+    )
+  }
+}
 
 function mediaErrorName(error: unknown): string {
   if (error instanceof DOMException) return error.name
@@ -158,7 +345,8 @@ async function describeCameraFailure(error: unknown): Promise<string> {
 export function createGazeTracker(): GazeTracker {
   const sampleListeners = new Set<(s: GazeSample) => void>()
   const statusListeners = new Set<(s: TrackerStatus, error?: string) => void>()
-  const filter = new OneEuro2D({ freq: 60, mincutoff: 1.0, beta: 0.007 })
+  const filter = new BlinkSpikeFilter()
+  const blinkGate = new EyeBlinkGate()
   let status: TrackerStatus = 'unloaded'
   let wg: WebGazerAPI | null = null
   /** 마지막 valid sample 의 timestamp (ms). null = 아직 한 번도 안 들어옴. */
@@ -206,14 +394,18 @@ export function createGazeTracker(): GazeTracker {
 
       wg.setGazeListener((data) => {
         const t = performance.now()
-        if (!data) {
+        let s: GazeSample | null
+        const landmarks = wg?.getTracker?.()?.getPositions?.() as Landmark[] | null | undefined
+        const eyesClosed = blinkGate.update(landmarks ?? null)
+        if (!data || eyesClosed) {
           // 얼굴 검출 실패 프레임 — watchdog 이 STALE_MS 이상 지속 시 stale emit.
-          return
+          s = filter.missing(t)
+        } else {
+          s = filter.sample(data.x, data.y, t)
         }
+        if (!s) return
         lastSampleAt = t
-        staleEmitted = false
-        const { x: fx, y: fy } = filter.filter(data.x, data.y, t)
-        const s: GazeSample = { x: data.x, y: data.y, fx, fy, t }
+        staleEmitted = s.fx < 0 || s.fy < 0
         sampleListeners.forEach((cb) => cb(s))
       })
 
@@ -265,6 +457,8 @@ export function createGazeTracker(): GazeTracker {
     }
     lastSampleAt = null
     staleEmitted = false
+    filter.reset()
+    blinkGate.reset()
     setStatus('stopped')
   }
 
@@ -276,6 +470,7 @@ export function createGazeTracker(): GazeTracker {
     if (!wg) return
     await wg.clearData()
     filter.reset()
+    blinkGate.reset()
   }
 
   return {

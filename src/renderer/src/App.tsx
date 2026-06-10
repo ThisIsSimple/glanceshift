@@ -359,7 +359,7 @@ export function App(): JSX.Element {
   }, [edgeSnapshot.state, point.x, point.y, viewport.w, viewport.h])
 
   const inputSource = usingGaze
-    ? 'WebGazer (OneEuro filtered)'
+    ? 'WebGazer (blink-stabilized)'
     : trackerStatus === 'loading'
       ? 'mouse (gaze loading…)'
       : trackerStatus === 'error'
