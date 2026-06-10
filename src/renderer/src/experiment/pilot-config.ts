@@ -19,7 +19,7 @@ export const PILOT_RUN_TIMEOUT_MS = 90_000
 export const PILOT_ANALYSIS_WINDOW_MS = 5_000
 export const PILOT_FRAME_SAMPLE_MS = 100
 
-export const PILOT_OBSTACLE_SEED = 'pilot-obstacles-v4'
+export const PILOT_OBSTACLE_SEED = 'pilot-obstacles-v5'
 export const PILOT_PROMPT_SEED = 'pilot-prompts-v1'
 
 export const PILOT_BASE_SPEED = 300
@@ -86,7 +86,16 @@ const OBSTACLE_TIMES: Array<[number, RunnerLane]> = [
 ]
 
 export function createPilotObstacles(): ObstacleSpec[] {
-  return OBSTACLE_TIMES.map(([timeSec, lane], idx) => ({
+  const doubled = OBSTACLE_TIMES.flatMap(([timeSec, lane], idx): Array<[number, RunnerLane]> => {
+    const extraTimeSec = Math.min(PILOT_RUN_DURATION_MS / 1000 - 0.6, timeSec + 0.72)
+    const extraLane = ((lane + (idx % 2 === 0 ? 1 : 2)) % 3) as RunnerLane
+    return [
+      [timeSec, lane],
+      [extraTimeSec, extraLane]
+    ]
+  }).sort((a, b) => a[0] - b[0])
+
+  return doubled.map(([timeSec, lane], idx) => ({
     id: `obs-${idx + 1}`,
     distance: Math.round(timeSec * PILOT_BASE_SPEED),
     lane
@@ -94,13 +103,13 @@ export function createPilotObstacles(): ObstacleSpec[] {
 }
 
 export function targetLabel(target: CommandTarget): string {
-  if (target === 'game') return '게임'
-  if (target === 'voice') return '음성채팅'
-  return '전체'
+  if (target === 'game') return 'Game'
+  if (target === 'voice') return 'Voice chat'
+  return 'Master'
 }
 
 export function directionLabel(direction: 'up' | 'down'): string {
-  return direction === 'up' ? '올리세요' : '낮추세요'
+  return direction === 'up' ? 'increase' : 'decrease'
 }
 
 export function nextValueForDirection(value: number, direction: 'up' | 'down', step: number): number {

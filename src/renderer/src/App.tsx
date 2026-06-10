@@ -89,7 +89,7 @@ export function App(): JSX.Element {
   const [head, setHead] = useState<HeadSample>(ZERO_HEAD)
 
   const [evaluating, setEvaluating] = useState(false)
-  const [pilotExperiment, setPilotExperiment] = useState(false)
+  const [pilotExperiment, setPilotExperiment] = useState(true)
 
   // Edge detector — IntentTracker + Rail FSM (snapping).
   const edgeDetectorRef = useRef(new EdgeDetector(DEFAULT_SNAP_CONFIG))
@@ -334,29 +334,9 @@ export function App(): JSX.Element {
     setGazeBarHoverId(id)
   }, [])
 
-  // GazeBar 는 edge state 가 'entered' 인 동안 보임.
-  // 추가로 — activeControl 이 latch 되어 있는 동안에는 시선이 중앙으로 돌아가도
-  // 마지막으로 진입했던 edge 를 유지해 GazeBar 를 그대로 띄워둔다.
-  // (조작 모드 중에는 값 변화가 시각화돼야 사용자가 head tilt 결과를 확인 가능)
-  const lastEnteredEdgeRef = useRef<Edge | null>(null)
-  useEffect(() => {
-    if (edgeSnapshot.state === 'entered' && edgeSnapshot.edge) {
-      lastEnteredEdgeRef.current = edgeSnapshot.edge
-    }
-  }, [edgeSnapshot.state, edgeSnapshot.edge])
-
-  // effectiveGaze — lock 중에는 rail 위로 강제 (perpendicular jitter 무관), 그 외엔 원본 point.
-  // useMemo 를 제거: deps 가 매 sample 마다 변하므로 메모이제이션 효과가 없고, 매 render
-  // 새 객체 할당이 동일하다.
-  const effectiveGaze: { x: number; y: number } | null =
-    edgeSnapshot.state === 'entered' && edgeSnapshot.railCursor
-      ? edgeSnapshot.railCursor
-      : point.x >= 0
-        ? { x: point.x, y: point.y }
-        : null
-
-  // GazeBar 의 항목 hover 계산은 effectiveGaze 를 사용 — lock 중에는 rail 좌표.
-  const gazeBarGaze = effectiveGaze
+  // GazeBar hover uses the raw gaze point. Rail projection is avoided here because
+  // Tobii is accurate enough and projection can make sidebar thirds feel sticky.
+  const rawGaze = point.x >= 0 ? { x: point.x, y: point.y } : null
 
   // hover 변화 → dwell 시작/리셋. 같은 항목 유지 시 startedAt 보존, 다른 항목으로 바뀌면 새 dwell.
   // selected 가 이미 있어도 dwell 추적은 계속 — 사용자가 새 항목으로 1초 dwell 하면 재선택 허용.
@@ -399,14 +379,10 @@ export function App(): JSX.Element {
     return () => window.clearInterval(intervalId)
   }, [gazeBarHoverId])
 
-  // gazeBarEdge — entered 상태이면 현재 edge, 그 외엔 selectedControlId 가 살아있는 동안
-  // 마지막 entered edge 로 fallback. 시선이 중앙으로 돌아가도 engagement 유지 동안 UI 유지.
+  // The bar is visible only while the edge FSM is entered; the selected control
+  // remains latched for head-tilt adjustment after the bar closes.
   const gazeBarEdge: Edge | null =
-    edgeSnapshot.state === 'entered' && edgeSnapshot.edge
-      ? edgeSnapshot.edge
-      : selectedControlId != null
-        ? lastEnteredEdgeRef.current
-        : null
+    edgeSnapshot.state === 'entered' && edgeSnapshot.edge ? edgeSnapshot.edge : null
 
   // 8) Slider engagement — selectedControlId 가 latch 되어 있는 동안 시선과 무관하게
   //    head roll 로 그 control 의 값을 조절. SELECT_DWELL_MS dwell → select 의 결과로만 켜짐.
@@ -563,19 +539,20 @@ export function App(): JSX.Element {
         <GazeBar
           edge={gazeBarEdge}
           viewport={viewport}
-          gazePoint={gazeBarGaze}
+          gazePoint={rawGaze}
           items={GAZEBAR_ITEMS}
           onHoverChange={handleHoverChange}
           valuesById={sliderValues}
           liveValue={liveSliderValue}
-          lockedItemId={selectedControlId}
+          snapHover
+          lockedItemId={gazeBarEdge ? null : selectedControlId}
         />
       )}
 
       {!pilotExperiment && (
         <GazeDot
-          x={effectiveGaze?.x ?? point.x}
-          y={effectiveGaze?.y ?? point.y}
+          x={point.x}
+          y={point.y}
           visible={debugVisible}
           snapAnimating={snapAnimating}
           dwellProgress={dwellProgress?.progress ?? null}

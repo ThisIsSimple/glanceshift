@@ -440,39 +440,6 @@
   text-transform: uppercase;
 }
 
-.calib-dot {
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid rgba(90, 169, 255, 0.85);
-  background: rgba(90, 169, 255, 0.18);
-  color: white;
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: crosshair;
-  transform: translate(-50%, -50%);
-  transition: background 120ms ease, transform 80ms ease, border-color 120ms ease;
-  padding: 0;
-}
-.calib-dot:hover {
-  background: rgba(90, 169, 255, 0.32);
-}
-.calib-dot:active {
-  transform: translate(-50%, -50%) scale(0.92);
-}
-.calib-dot.filled {
-  background: rgba(80, 220, 140, 0.4);
-  border-color: rgba(80, 220, 140, 0.95);
-}
-.calib-dot-count {
-  pointer-events: none;
-}
-
 /* ===== Pilot experiment ===== */
 .pilot-root {
   position: fixed;

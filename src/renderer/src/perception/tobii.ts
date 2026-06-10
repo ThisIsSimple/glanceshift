@@ -1,4 +1,3 @@
-import { OneEuroFilter } from './one-euro'
 import type { GazeSample, HeadSample, HeadTrackerStatus, TrackerStatus } from './tracker-types'
 
 type TobiiSample = Parameters<typeof window.glanceshift.onTobiiSample>[0] extends (
@@ -39,10 +38,6 @@ export function createTobiiTracker(): TobiiTracker {
   const sampleListeners = new Set<(s: TobiiTrackerSample) => void>()
   const gazeStatusListeners = new Set<(s: TrackerStatus, error?: string) => void>()
   const headStatusListeners = new Set<(s: HeadTrackerStatus, error?: string) => void>()
-  const fYaw = new OneEuroFilter(60, 1.5, 0.05)
-  const fPitch = new OneEuroFilter(60, 1.5, 0.05)
-  const fRoll = new OneEuroFilter(60, 1.5, 0.05)
-
   let statusValue: TrackerStatus = 'unloaded'
   let offSample: (() => void) | null = null
   let offStatus: (() => void) | null = null
@@ -68,20 +63,17 @@ export function createTobiiTracker(): TobiiTracker {
       ? { x: sample.x, y: sample.y, fx: sample.x, fy: sample.y, t }
       : { x: -1, y: -1, fx: -1, fy: -1, t }
 
-    if (!sample.present) {
-      fYaw.reset()
-      fPitch.reset()
-      fRoll.reset()
-    }
-
     const detected = sample.present
+    const yaw = detected ? sample.yaw : 0
+    const pitch = detected ? sample.pitch : 0
+    const roll = detected ? sample.roll : 0
     const head: HeadSample = {
-      yaw: detected ? sample.yaw : 0,
-      pitch: detected ? sample.pitch : 0,
-      roll: detected ? sample.roll : 0,
-      fYaw: detected ? fYaw.filter(sample.yaw, t) : 0,
-      fPitch: detected ? fPitch.filter(sample.pitch, t) : 0,
-      fRoll: detected ? fRoll.filter(sample.roll, t) : 0,
+      yaw,
+      pitch,
+      roll,
+      fYaw: yaw,
+      fPitch: pitch,
+      fRoll: roll,
       t,
       detected,
       iris: null,
