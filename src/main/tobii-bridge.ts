@@ -46,10 +46,16 @@ let bridgeStatus: TobiiBridgeStatus = 'unloaded'
 let bridgeError: string | null = null
 let stdoutBuffer = ''
 
+function canSendToRenderer(win: BrowserWindow | null): win is BrowserWindow {
+  return !!win && !win.isDestroyed() && !win.webContents.isDestroyed()
+}
+
 function publishStatus(win: BrowserWindow | null, status: TobiiBridgeStatus, error?: string): void {
   bridgeStatus = status
   bridgeError = error ?? null
-  win?.webContents.send('glanceshift:tobii-status', { status, error: bridgeError })
+  if (canSendToRenderer(win)) {
+    win.webContents.send('glanceshift:tobii-status', { status, error: bridgeError })
+  }
 }
 
 function helperCandidates(): string[] {
@@ -139,8 +145,8 @@ function handleLine(win: BrowserWindow | null, line: string): void {
     publishStatus(win, message.status, message.error)
     return
   }
-  if (message.type === 'sample') {
-    win?.webContents.send('glanceshift:tobii-sample', normalizeSample(message))
+  if (message.type === 'sample' && canSendToRenderer(win)) {
+    win.webContents.send('glanceshift:tobii-sample', normalizeSample(message))
   }
 }
 
@@ -150,7 +156,7 @@ export function startTobiiBridge(win: BrowserWindow | null): { ok: boolean; stat
     publishStatus(win, 'error', error)
     return { ok: false, status: 'error', error }
   }
-  if (!win) {
+  if (!canSendToRenderer(win)) {
     const error = 'Overlay window is not ready.'
     publishStatus(win, 'error', error)
     return { ok: false, status: 'error', error }

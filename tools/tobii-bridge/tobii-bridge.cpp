@@ -1,5 +1,8 @@
 #include "tobii_gameintegration.h"
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
 #include <algorithm>
 #include <chrono>
@@ -52,6 +55,15 @@ int64_t now_ms() {
   return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
+bool track_window_rectangle(ITobiiGameIntegrationApi* api, HWND hwnd, int& width, int& height) {
+  RECT clientRect{};
+  if (!hwnd || !GetClientRect(hwnd, &clientRect)) return false;
+
+  width = static_cast<int>(std::max(1L, clientRect.right - clientRect.left));
+  height = static_cast<int>(std::max(1L, clientRect.bottom - clientRect.top));
+  return api->GetTrackerController()->TrackRectangle({0, 0, width, height});
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -82,10 +94,27 @@ int main(int argc, char** argv) {
     }
 
     HWND hwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(hwndValue));
+    bool trackingStarted = false;
+    int trackingWidth = GetSystemMetrics(SM_CXSCREEN);
+    int trackingHeight = GetSystemMetrics(SM_CYSCREEN);
     if (hwnd) {
-      api->GetTrackerController()->TrackWindow(hwnd);
-    } else {
-      api->GetTrackerController()->TrackWindow(GetConsoleWindow());
+      trackingStarted = track_window_rectangle(api, hwnd, trackingWidth, trackingHeight);
+      if (!trackingStarted) {
+        trackingStarted = api->GetTrackerController()->TrackWindow(hwnd);
+      }
+    }
+    if (!trackingStarted) {
+      trackingStarted = api->GetTrackerController()->TrackRectangle({
+        0,
+        0,
+        trackingWidth,
+        trackingHeight
+      });
+    }
+    if (!trackingStarted) {
+      status("error", "Could not start Tobii window/rectangle tracking.");
+      api->Shutdown();
+      return 4;
     }
 
     status("ready");
@@ -107,8 +136,12 @@ int main(int argc, char** argv) {
                 << ",\"t\":" << now_ms();
 
       if (hasGaze) {
-        std::cout << ",\"x\":" << gazePoint.X
-                  << ",\"y\":" << gazePoint.Y;
+        const double rawX = (static_cast<double>(gazePoint.X) + 1.0) * 0.5 * trackingWidth;
+        const double rawY = (1.0 - ((static_cast<double>(gazePoint.Y) + 1.0) * 0.5)) * trackingHeight;
+        const double x = std::clamp(rawX, 0.0, static_cast<double>(trackingWidth));
+        const double y = std::clamp(rawY, 0.0, static_cast<double>(trackingHeight));
+        std::cout << ",\"x\":" << x
+                  << ",\"y\":" << y;
       }
       if (hasHead) {
         std::cout << ",\"yaw\":" << headPose.Rotation.YawDegrees

@@ -34,6 +34,7 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 $Source = "$PSScriptRoot\tobii-bridge.cpp"
 $Exe = "$OutDir\tobii-bridge.exe"
+$Obj = "$OutDir\tobii-bridge.obj"
 $IncludeDir = $Header.DirectoryName
 $LibDir = $Lib.DirectoryName
 
@@ -41,14 +42,14 @@ $VsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.e
 $Cl = (Get-Command cl.exe -ErrorAction SilentlyContinue)
 
 if ($Cl) {
-  & cl.exe /nologo /EHsc /std:c++17 /I"$IncludeDir" "$Source" /link /LIBPATH:"$LibDir" "$($Lib.Name)" /OUT:"$Exe"
+  & cl.exe /nologo /EHsc /std:c++17 /Fo"$Obj" /I"$IncludeDir" "$Source" /link /LIBPATH:"$LibDir" "$($Lib.Name)" user32.lib /OUT:"$Exe"
 } elseif (Test-Path -LiteralPath $VsWhere) {
   $VsInstall = & $VsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
   if (-not $VsInstall) {
     throw "Visual Studio C++ Build Tools were not found. Install Desktop development with C++."
   }
   $VsDevCmd = Join-Path $VsInstall "Common7\Tools\VsDevCmd.bat"
-  $Command = "`"$VsDevCmd`" -arch=x64 && cl.exe /nologo /EHsc /std:c++17 /I`"$IncludeDir`" `"$Source`" /link /LIBPATH:`"$LibDir`" `"$($Lib.Name)`" /OUT:`"$Exe`""
+  $Command = "`"$VsDevCmd`" -arch=x64 && cl.exe /nologo /EHsc /std:c++17 /Fo`"$Obj`" /I`"$IncludeDir`" `"$Source`" /link /LIBPATH:`"$LibDir`" `"$($Lib.Name)`" user32.lib /OUT:`"$Exe`""
   & cmd.exe /c $Command
 } else {
   throw "cl.exe was not found. Install Visual Studio Build Tools with Desktop development with C++."

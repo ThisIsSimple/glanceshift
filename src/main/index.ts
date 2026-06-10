@@ -129,6 +129,11 @@ function createOverlayWindow(): void {
     overlayWindow?.show()
   })
 
+  overlayWindow.on('closed', () => {
+    stopTobiiBridge(null)
+    overlayWindow = null
+  })
+
   // HMR 지원
   if (process.env['ELECTRON_RENDERER_URL']) {
     overlayWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])

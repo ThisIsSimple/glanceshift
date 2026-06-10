@@ -68,6 +68,9 @@ desktop.ini
 *.rpm
 *.snap
 
+# ===== Native helper build output =====
+tools/tobii-bridge/bin/
+
 # ===== 평가용 캡처/로그 (Phase 8) =====
 captures/
 eval-logs/
