@@ -2,8 +2,7 @@
  * GlanceShift App — 최상위 컴포넌트.
  *
  * 입력 채널:
- *   · 시선  — WebGazer + One Euro Filter (raw mode 는 필터 off), ⌘⇧K 로 캘리브
- *   · 머리  — face mesh landmarks 에서 직접 계산한 yaw/pitch/roll
+ *   · 시선/머리 — Tobii Eye Tracker 5 bridge에서 받은 gaze + yaw/pitch/roll
  *
  * 핵심 책임:
  *   · gaze/head/edge state 를 컴포넌트 트리로 prop 전달
@@ -16,21 +15,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DebugHud } from './components/DebugHud'
 import { GazeDot } from './components/GazeDot'
-import { Calibration } from './components/Calibration'
 import { EdgeZones } from './components/EdgeZones'
 import { GazeBar, type GazeBarItem } from './components/GazeBar'
 import { Evaluation } from './components/Evaluation'
 import { PilotExperiment } from './experiment/PilotExperiment'
-import { createGazeTracker, type GazeSample, type TrackerStatus } from './perception/webgazer'
-import {
-  createHeadTracker,
-  type HeadSample,
-  type HeadTrackerStatus
-} from './perception/face-landmarker'
 import { createTobiiTracker } from './perception/tobii'
 import { EdgeDetector, type Edge, type EdgeSnapshot } from './perception/edge-detector'
 import { DEFAULT_SNAP_CONFIG } from './perception/intent-score'
 import { SliderIntentMapper, DEFAULT_SLIDER_CONFIG } from './perception/slider-mapper'
+import type { HeadSample, HeadTrackerStatus, TrackerStatus } from './perception/tracker-types'
 
 // GazeBar 의 후보 항목. Phase 5 에서 머리 기울임으로 볼륨·밝기 slider 연결.
 const GAZEBAR_ITEMS: GazeBarItem[] = [
@@ -88,19 +81,15 @@ export function App(): JSX.Element {
   const [trackerError, setTrackerError] = useState<string | null>(null)
   const [gaze, setGaze] = useState<Point>({ x: -1, y: -1, t: 0 })
   const [mouse, setMouse] = useState<Point>({ x: -1, y: -1, t: 0 })
-  /** WebGazer가 한 번이라도 (data ≠ null)인 예측을 내놨는지 — 즉 캘리브 후 작동 중 */
+  /** Tobii가 유효한 gaze sample을 한 번이라도 보냈는지. */
   const [hasGazeData, setHasGazeData] = useState(false)
 
   const [headStatus, setHeadStatus] = useState<HeadTrackerStatus>('unloaded')
   const [headError, setHeadError] = useState<string | null>(null)
   const [head, setHead] = useState<HeadSample>(ZERO_HEAD)
 
-  const [calibrating, setCalibrating] = useState(false)
   const [evaluating, setEvaluating] = useState(false)
   const [pilotExperiment, setPilotExperiment] = useState(false)
-  const [gazeProvider, setGazeProvider] = useState<'tobii' | 'webgazer' | 'mouse'>('mouse')
-  const trackerRef = useRef<ReturnType<typeof createGazeTracker> | null>(null)
-  const gazeProviderRef = useRef(gazeProvider)
 
   // Edge detector — IntentTracker + Rail FSM (snapping).
   const edgeDetectorRef = useRef(new EdgeDetector(DEFAULT_SNAP_CONFIG))
@@ -160,100 +149,25 @@ export function App(): JSX.Element {
   // OS bridge throttle — 같은 항목에 대해 100ms 마다 최대 1회 push
   const lastOsPushRef = useRef<{ itemId: string | null; t: number }>({ itemId: null, t: 0 })
 
-  useEffect(() => {
-    gazeProviderRef.current = gazeProvider
-  }, [gazeProvider])
-
-  // 1) 시선 + 머리 트래커 init — 카메라 권한 확인 후 순차 시작
-  // 순서가 중요: WebGazer 가 video element 를 만든 다음에야 FaceLandmarker 가 그걸 잡을 수 있음.
-  useEffect(() => {
-    let cancelled = false
-    const gazeTracker = createGazeTracker()
-    const headTracker = createHeadTracker()
-    trackerRef.current = gazeTracker
-    setGazeProvider('webgazer')
-
-    const offGazeSample = gazeTracker.onSample((s: GazeSample) => {
-      if (cancelled) return
-      if (gazeProviderRef.current === 'tobii') return
-      // OneEuro 필터된 좌표 사용
-      setGaze({ x: s.fx, y: s.fy, t: s.t })
-      setHasGazeData(true)
-    })
-
-    const offGazeStatus = gazeTracker.onStatus((s, err) => {
-      if (cancelled) return
-      if (gazeProviderRef.current === 'tobii') return
-      setTrackerStatus(s)
-      setTrackerError(err ?? null)
-    })
-
-    const offHeadSample = headTracker.onSample((s: HeadSample) => {
-      if (cancelled) return
-      if (gazeProviderRef.current === 'tobii') return
-      setHead(s)
-    })
-
-    const offHeadStatus = headTracker.onStatus((s, err) => {
-      if (cancelled) return
-      if (gazeProviderRef.current === 'tobii') return
-      setHeadStatus(s)
-      setHeadError(err ?? null)
-    })
-
-    ;(async () => {
-      try {
-        const status = await window.glanceshift.getCameraPermission()
-        if (status !== 'granted') {
-          await window.glanceshift.requestCameraPermission()
-        }
-
-        if (cancelled) return
-        await gazeTracker.start()
-
-        // WebGazer ready → video element 존재 → 머리 트래커 시작
-        if (cancelled) return
-        await headTracker.start()
-      } catch (e) {
-        // 에러는 상태 콜백으로 이미 전파됨
-      }
-    })()
-
-    return () => {
-      cancelled = true
-      offGazeSample()
-      offGazeStatus()
-      offHeadSample()
-      offHeadStatus()
-      headTracker.stop()
-      gazeTracker.stop()
-    }
-  }, [])
-
+  // Tobii-only gaze/head input. Webcam/WebGazer is intentionally not started on this branch.
   useEffect(() => {
     let cancelled = false
     const tobiiTracker = createTobiiTracker()
     const offSample = tobiiTracker.onSample(({ gaze: gazeSample, head: headSample }) => {
       if (cancelled) return
-      gazeProviderRef.current = 'tobii'
-      setGazeProvider('tobii')
       setGaze({ x: gazeSample.fx, y: gazeSample.fy, t: gazeSample.t })
       setHead(headSample)
       setHasGazeData(gazeSample.fx >= 0 && gazeSample.fy >= 0)
     })
     const offGazeStatus = tobiiTracker.onGazeStatus((s, err) => {
       if (cancelled) return
-      if (s === 'ready' || gazeProviderRef.current === 'tobii') {
-        setTrackerStatus(s)
-        setTrackerError(err ?? null)
-      }
+      setTrackerStatus(s)
+      setTrackerError(err ?? null)
     })
     const offHeadStatus = tobiiTracker.onHeadStatus((s, err) => {
       if (cancelled) return
-      if (s === 'ready' || gazeProviderRef.current === 'tobii') {
-        setHeadStatus(s)
-        setHeadError(err ?? null)
-      }
+      setHeadStatus(s)
+      setHeadError(err ?? null)
     })
 
     void tobiiTracker.start()
@@ -271,13 +185,11 @@ export function App(): JSX.Element {
   useEffect(() => {
     const offDebug = window.glanceshift.onToggleDebug(() => setDebugVisible((v) => !v))
     const offCt = window.glanceshift.onClickThroughChange((enabled) => setClickThrough(enabled))
-    const offCalib = window.glanceshift.onToggleCalibration(() => setCalibrating((v) => !v))
     const offEval = window.glanceshift.onToggleEvaluation(() => setPilotExperiment((v) => !v))
 
     return () => {
       offDebug()
       offCt()
-      offCalib()
       offEval()
     }
   }, [])
@@ -307,14 +219,14 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('mousemove', onMove)
   }, [])
 
-  // 5) 캘리브레이션 / 평가 진입 시 click-through 해제, 종료 시 복귀
+  // 5) 평가 진입 시 click-through 해제, 종료 시 복귀
   useEffect(() => {
-    if (calibrating || evaluating || pilotExperiment) {
+    if (evaluating || pilotExperiment) {
       window.glanceshift.setClickThrough(false)
     } else {
       window.glanceshift.setClickThrough(true)
     }
-  }, [calibrating, evaluating, pilotExperiment])
+  }, [evaluating, pilotExperiment])
 
   useEffect(() => {
     if (!pilotExperiment) return
@@ -326,7 +238,6 @@ export function App(): JSX.Element {
 
   // 어떤 입력을 표시할지
   const usingGaze = trackerStatus === 'ready' && gaze.x >= 0
-  const needsCalibration = trackerStatus === 'ready' && !hasGazeData
   const point = usingGaze ? gaze : mouse
 
   // 6) Edge Detector 갱신 — point 가 바뀔 때마다 update, 진입/이탈 이벤트는 콘솔에 로그
@@ -408,15 +319,13 @@ export function App(): JSX.Element {
   }, [edgeSnapshot.state, point.x, point.y, viewport.w, viewport.h])
 
   const inputSource = usingGaze
-    ? gazeProvider === 'tobii'
-      ? 'Tobii Eye Tracker 5'
-      : 'WebGazer (blink-stabilized)'
+    ? 'Tobii Eye Tracker 5'
     : trackerStatus === 'loading'
-      ? 'mouse (gaze loading…)'
-      : trackerStatus === 'error'
-        ? `mouse (gaze error: ${trackerError ?? ''})`
+      ? 'mouse (Tobii loading...)'
+    : trackerStatus === 'error'
+        ? `mouse (Tobii error: ${trackerError ?? ''})`
         : trackerStatus === 'ready' && !hasGazeData
-          ? 'mouse (needs calibration — ⌘⇧K)'
+          ? 'mouse (waiting for Tobii sample)'
           : 'mouse (fallback)'
 
   // GazeBar onHoverChange — setState 함수는 React 가 stable reference 를 보장하므로
@@ -680,7 +589,6 @@ export function App(): JSX.Element {
           clickThrough={clickThrough}
           inputSource={inputSource}
           trackerStatus={trackerStatus}
-          needsCalibration={needsCalibration}
           headStatus={headStatus}
           headError={headError}
           head={head}
@@ -690,19 +598,6 @@ export function App(): JSX.Element {
           sliderValues={sliderValues}
           sliderDebug={sliderDebug}
           engageDebug={engageDebug}
-        />
-      )}
-
-      {calibrating && (
-        <Calibration
-          viewport={viewport}
-          onPointClick={(x, y) => trackerRef.current?.recordPoint(x, y)}
-          onDone={() => setCalibrating(false)}
-          onClearCalibration={async () => {
-            await trackerRef.current?.clearCalibration()
-            setHasGazeData(false)
-          }}
-          head={head}
         />
       )}
 
@@ -720,7 +615,6 @@ export function App(): JSX.Element {
           head={head}
           edgeSnapshot={edgeSnapshot}
           onDone={() => setPilotExperiment(false)}
-          onRequestCalibration={() => setCalibrating(true)}
         />
       )}
     </>

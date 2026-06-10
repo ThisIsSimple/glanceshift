@@ -7,12 +7,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "copy:webgazer": "node scripts/copy-webgazer.mjs",
     "compare:evals": "node scripts/compare-evals.mjs",
     "build:tobii": "powershell -ExecutionPolicy Bypass -File tools/tobii-bridge/build.ps1",
-    "predev": "npm run copy:webgazer",
-    "prebuild": "npm run copy:webgazer",
-    "postinstall": "node scripts/copy-webgazer.mjs || true",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
@@ -26,8 +22,7 @@
     "@electron-toolkit/utils": "^3.0.0",
     "loudness": "^0.4.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "webgazer": "^3.5.3"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",

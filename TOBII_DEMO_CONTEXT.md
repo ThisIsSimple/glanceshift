@@ -57,13 +57,12 @@ npm run dev
 - `Ctrl+Shift+D`: 디버그 HUD 열기/닫기
 - `Ctrl+Shift+I`: DevTools 열기/닫기
 - `Ctrl+Shift+Q`: 앱 종료
-- `Ctrl+Shift+K`: WebGazer 보정 화면 열기/닫기
 
-Tobii bridge가 정상적으로 시작되면 앱은 WebGazer 대신 Tobii gaze/head-pose 샘플을 사용합니다. bridge가 없거나 실행에 실패하면 WebGazer fallback으로 계속 동작합니다.
+Tobii bridge가 정상적으로 시작되면 앱은 Tobii gaze/head-pose 샘플만 사용합니다. bridge가 없거나 실행에 실패하면 gaze tracker가 error 상태가 되고, 디버그/조작 확인용 mouse fallback만 남습니다. WebGazer/webcam fallback은 Tobii 브랜치에서 제거했습니다.
 
 ## Experiment Flow
 
-1. Tobii 설정 앱에서 참가자 시선 보정을 먼저 끝냅니다.
+1. Tobii 설정 앱에서 참가자 시선 보정을 먼저 끝냅니다. 앱 내부 WebGazer 보정 단계는 없습니다.
 2. `npm run dev`로 GlanceShift를 실행합니다.
 3. `Ctrl+Shift+D`로 디버그 HUD를 켜서 `gaze tracker` 상태와 gaze 좌표가 움직이는지 확인합니다.
 4. `Ctrl+Shift+E`로 실험 화면을 엽니다.

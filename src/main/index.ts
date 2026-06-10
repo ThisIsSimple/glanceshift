@@ -13,7 +13,7 @@
  * 원칙상 오버레이는 기본적으로 "보이지 않는 캔버스"여야 한다.
  */
 
-import { app, BrowserWindow, globalShortcut, screen, ipcMain, session, systemPreferences, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, screen, ipcMain, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import { exec } from 'node:child_process'
@@ -152,12 +152,6 @@ function registerShortcuts(): void {
     console.log(`[main] click-through = ${clickThrough}`)
   })
 
-  // 캘리브레이션 토글 — globalShortcut 으로 등록해야 click-through 상태에서도
-  // 키보드 입력을 받을 수 있다. (renderer 의 keydown 은 window focus 가 있어야 동작)
-  globalShortcut.register('CommandOrControl+Shift+K', () => {
-    overlayWindow?.webContents.send('glanceshift:toggle-calibration')
-  })
-
   // 평가 모드 토글
   globalShortcut.register('CommandOrControl+Shift+E', () => {
     overlayWindow?.webContents.send('glanceshift:toggle-evaluation')
@@ -182,17 +176,6 @@ ipcMain.handle('glanceshift:set-click-through', (_e, enabled: boolean) => {
   clickThrough = enabled
   overlayWindow?.setIgnoreMouseEvents(enabled, { forward: true })
   return clickThrough
-})
-
-// macOS: 카메라 권한 상태 조회·요청
-ipcMain.handle('glanceshift:get-camera-permission', async () => {
-  if (process.platform !== 'darwin') return 'granted'
-  return systemPreferences.getMediaAccessStatus('camera')
-})
-
-ipcMain.handle('glanceshift:request-camera-permission', async () => {
-  if (process.platform !== 'darwin') return true
-  return systemPreferences.askForMediaAccess('camera')
 })
 
 ipcMain.handle('glanceshift:start-tobii', async () => {
@@ -314,19 +297,6 @@ ipcMain.handle('glanceshift:reveal-eval-folder', async () => {
   return dir
 })
 
-function installPermissionHandlers(): void {
-  // getUserMedia 호출 시 Electron 권한 자동 grant
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    if (permission === 'media') return callback(true)
-    if (permission === 'mediaKeySystem') return callback(true)
-    callback(false)
-  })
-  // 일부 Chromium 버전에서 사용하는 동기 권한 체크
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    return permission === 'media' || permission === 'mediaKeySystem'
-  })
-}
-
 app.whenReady().then(async () => {
   // macOS dock 숨김 (오버레이 앱은 dock 노이즈를 줄임)
   if (process.platform === 'darwin' && app.dock) {
@@ -348,7 +318,6 @@ app.whenReady().then(async () => {
     }
   }
 
-  installPermissionHandlers()
   createOverlayWindow()
   registerShortcuts()
 

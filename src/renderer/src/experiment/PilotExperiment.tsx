@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EdgeSnapshot, Edge } from '../perception/edge-detector'
-import type { HeadSample } from '../perception/face-landmarker'
+import type { HeadSample } from '../perception/tracker-types'
 import { SliderIntentMapper, DEFAULT_SLIDER_CONFIG } from '../perception/slider-mapper'
 import { ExperimentAudioMixer } from './audio-mixer'
 import {
@@ -51,7 +51,6 @@ type Props = {
   head: HeadSample
   edgeSnapshot: EdgeSnapshot
   onDone: () => void
-  onRequestCalibration: () => void
 }
 
 type RuntimeTrial = {
@@ -166,8 +165,7 @@ export function PilotExperiment({
   gazePoint,
   head,
   edgeSnapshot,
-  onDone,
-  onRequestCalibration
+  onDone
 }: Props): JSX.Element {
   const [phase, setPhase] = useState<PilotPhase>('setup')
   const [participantId, setParticipantId] = useState('P01')
@@ -1089,9 +1087,6 @@ export function PilotExperiment({
               }}
             >
               오디오 준비
-            </button>
-            <button type="button" onClick={onRequestCalibration}>
-              캘리브레이션
             </button>
             <button type="button" className="primary" onClick={startNextPractice}>
               시작

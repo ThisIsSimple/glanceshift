@@ -4,7 +4,6 @@
  */
 import { contextBridge, ipcRenderer } from 'electron'
 
-type CameraStatus = 'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'
 type TobiiStatus = 'unloaded' | 'starting' | 'ready' | 'error' | 'stopped'
 type TobiiStatusPayload = { status: TobiiStatus; error?: string | null }
 type TobiiSample = {
@@ -22,14 +21,6 @@ const api = {
   /** click-through 마우스 통과 설정 (캘리브레이션 시 false로 토글) */
   setClickThrough: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('glanceshift:set-click-through', enabled),
-
-  /** macOS 카메라 권한 상태 조회 */
-  getCameraPermission: (): Promise<CameraStatus> =>
-    ipcRenderer.invoke('glanceshift:get-camera-permission'),
-
-  /** macOS 카메라 권한 요청 */
-  requestCameraPermission: (): Promise<boolean> =>
-    ipcRenderer.invoke('glanceshift:request-camera-permission'),
 
   startTobii: (): Promise<{ ok: boolean; status: TobiiStatus; error?: string }> =>
     ipcRenderer.invoke('glanceshift:start-tobii'),
@@ -75,12 +66,6 @@ const api = {
     const listener = (_e: unknown, enabled: boolean): void => cb(enabled)
     ipcRenderer.on('glanceshift:click-through', listener)
     return () => ipcRenderer.removeListener('glanceshift:click-through', listener)
-  },
-
-  onToggleCalibration: (cb: () => void): (() => void) => {
-    const listener = (): void => cb()
-    ipcRenderer.on('glanceshift:toggle-calibration', listener)
-    return () => ipcRenderer.removeListener('glanceshift:toggle-calibration', listener)
   },
 
   onToggleEvaluation: (cb: () => void): (() => void) => {

@@ -6,7 +6,7 @@
  */
 
 import { memo } from 'react'
-import type { HeadSample, HeadTrackerStatus } from '../perception/face-landmarker'
+import type { HeadSample, HeadTrackerStatus } from '../perception/tracker-types'
 import type { EdgeSnapshot } from '../perception/edge-detector'
 
 type Props = {
@@ -15,7 +15,6 @@ type Props = {
   clickThrough: boolean
   inputSource: string
   trackerStatus?: string
-  needsCalibration?: boolean
   headStatus?: HeadTrackerStatus
   headError?: string | null
   head?: HeadSample
@@ -47,7 +46,6 @@ function DebugHudImpl({
   clickThrough,
   inputSource,
   trackerStatus,
-  needsCalibration,
   headStatus,
   headError,
   head,
@@ -106,14 +104,6 @@ function DebugHudImpl({
           <span className="label">gaze tracker</span>
           <span className="value" style={{ color: statusColor(trackerStatus) }}>
             {trackerStatus}
-          </span>
-        </div>
-      )}
-      {needsCalibration && (
-        <div className="row">
-          <span className="label">calibration</span>
-          <span className="value" style={{ color: '#ffd166' }}>
-            required - press Ctrl+Shift+K
           </span>
         </div>
       )}

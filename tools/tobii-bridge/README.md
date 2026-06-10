@@ -27,7 +27,7 @@ $env:GLANCESHIFT_TOBII_BRIDGE="C:\path\to\tobii-bridge.exe"
 ## Behavior
 
 - If the Tobii bridge starts and emits samples, GlanceShift uses Tobii gaze and Tobii head pose.
-- If the helper is missing or fails, GlanceShift keeps using the existing WebGazer fallback.
+- If the helper is missing or fails, GlanceShift reports a Tobii error and leaves only mouse fallback for debugging.
 - Tobii coordinates are sent as window coordinates. On a normal single-display demo setup, this maps directly to the full-screen overlay.
 
 ## Protocol

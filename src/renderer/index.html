@@ -3,13 +3,6 @@
   <head>
     <meta charset="UTF-8" />
     <title>GlanceShift</title>
-    <!--
-      CSP — WebGazer + TensorFlow.js 요구사항:
-        · 'unsafe-eval'    : TFjs WASM/WebGL 백엔드
-        · worker-src blob: : TFjs Worker (face landmark detection)
-        · img-src blob:    : webcam frame
-        · media-src blob:  : webcam stream
-    -->
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'self';
                    script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:;
@@ -30,21 +23,10 @@
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         user-select: none;
       }
-      /* WebGazer는 비디오·페이스 메쉬 캔버스를 body에 직접 붙임. 보이지 않도록 강제. */
-      #webgazerVideoContainer,
-      #webgazerVideoFeed,
-      #webgazerFaceOverlay,
-      #webgazerFaceFeedbackBox,
-      #webgazerGazeDot {
-        display: none !important;
-        visibility: hidden !important;
-      }
     </style>
   </head>
   <body>
     <div id="root"></div>
-    <!-- WebGazer는 전역 window.webgazer 로 노출됨. defer로 DOMContentLoaded 직후 실행. -->
-    <script src="./webgazer.js" defer></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

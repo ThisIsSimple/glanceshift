@@ -62,7 +62,7 @@ export interface SnapConfig {
 
 export const DEFAULT_SNAP_CONFIG: SnapConfig = {
   // intent zone 을 plan 초안의 0.30 → 0.18 로 축소.
-  // 이유: WebGazer 캘리브 오차 (±200px 정도) 가 있는 사용자가 중앙을 봐도
+  // 이유: 의도하지 않은 중앙 응시/스캔 중에도
   //       outer 30% 영역으로 시선이 자주 표류해 의도 없는 lock 이 자주 발생.
   //       18% 면 표류 폭이 같아도 safe zone (중앙 64%) 침범 확률이 크게 감소.
   //       lockZone 은 6% 더 넓혀 hysteresis 보존.

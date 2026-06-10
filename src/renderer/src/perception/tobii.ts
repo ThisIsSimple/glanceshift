@@ -1,6 +1,5 @@
 import { OneEuroFilter } from './one-euro'
-import type { HeadSample, HeadTrackerStatus } from './face-landmarker'
-import type { GazeSample, TrackerStatus } from './webgazer'
+import type { GazeSample, HeadSample, HeadTrackerStatus, TrackerStatus } from './tracker-types'
 
 type TobiiSample = Parameters<typeof window.glanceshift.onTobiiSample>[0] extends (
   sample: infer S
