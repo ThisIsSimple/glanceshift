@@ -15,7 +15,7 @@
 
 import { app, BrowserWindow, globalShortcut, screen, ipcMain, session, systemPreferences, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import { writeFile, mkdir, access } from 'node:fs/promises'
@@ -28,6 +28,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 let overlayWindow: BrowserWindow | null = null
 let clickThrough = true
+
+function resolveEvalLogDir(): string {
+  const configured = process.env.GLANCESHIFT_EVAL_LOG_DIR?.trim()
+  return configured ? resolve(configured) : join(process.cwd(), 'eval-logs')
+}
 
 /**
  * macOS 의 `brightness` CLI (brew install brightness) 의 절대 경로.
@@ -278,10 +283,10 @@ ipcMain.handle('glanceshift:get-brightness', async () => {
   return null
 })
 
-// 평가 CSV 저장 — userData/eval-logs/<filename>.csv
+// 평가 CSV 저장 — <project>/eval-logs/<filename>.csv
 ipcMain.handle('glanceshift:save-eval-csv', async (_e, filename: string, content: string) => {
   const safeName = filename.replace(/[^\w.-]/g, '_')
-  const dir = join(app.getPath('userData'), 'eval-logs')
+  const dir = resolveEvalLogDir()
   await mkdir(dir, { recursive: true })
   const fullPath = join(dir, safeName)
   await writeFile(fullPath, content, 'utf8')
@@ -290,7 +295,7 @@ ipcMain.handle('glanceshift:save-eval-csv', async (_e, filename: string, content
 
 // Finder/Explorer 에서 평가 폴더 열기
 ipcMain.handle('glanceshift:reveal-eval-folder', async () => {
-  const dir = join(app.getPath('userData'), 'eval-logs')
+  const dir = resolveEvalLogDir()
   await mkdir(dir, { recursive: true })
   shell.openPath(dir)
   return dir

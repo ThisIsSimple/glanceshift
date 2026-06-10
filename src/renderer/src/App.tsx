@@ -20,6 +20,7 @@ import { Calibration } from './components/Calibration'
 import { EdgeZones } from './components/EdgeZones'
 import { GazeBar, type GazeBarItem } from './components/GazeBar'
 import { Evaluation } from './components/Evaluation'
+import { PilotExperiment } from './experiment/PilotExperiment'
 import { createGazeTracker, type GazeSample, type TrackerStatus } from './perception/webgazer'
 import {
   createHeadTracker,
@@ -95,6 +96,7 @@ export function App(): JSX.Element {
 
   const [calibrating, setCalibrating] = useState(false)
   const [evaluating, setEvaluating] = useState(false)
+  const [pilotExperiment, setPilotExperiment] = useState(false)
   const trackerRef = useRef<ReturnType<typeof createGazeTracker> | null>(null)
 
   // Edge detector — IntentTracker + Rail FSM (snapping).
@@ -221,7 +223,7 @@ export function App(): JSX.Element {
     const offDebug = window.glanceshift.onToggleDebug(() => setDebugVisible((v) => !v))
     const offCt = window.glanceshift.onClickThroughChange((enabled) => setClickThrough(enabled))
     const offCalib = window.glanceshift.onToggleCalibration(() => setCalibrating((v) => !v))
-    const offEval = window.glanceshift.onToggleEvaluation(() => setEvaluating((v) => !v))
+    const offEval = window.glanceshift.onToggleEvaluation(() => setPilotExperiment((v) => !v))
 
     return () => {
       offDebug()
@@ -258,15 +260,24 @@ export function App(): JSX.Element {
 
   // 5) 캘리브레이션 / 평가 진입 시 click-through 해제, 종료 시 복귀
   useEffect(() => {
-    if (calibrating || evaluating) {
+    if (calibrating || evaluating || pilotExperiment) {
       window.glanceshift.setClickThrough(false)
     } else {
       window.glanceshift.setClickThrough(true)
     }
-  }, [calibrating, evaluating])
+  }, [calibrating, evaluating, pilotExperiment])
+
+  useEffect(() => {
+    if (!pilotExperiment) return
+    setSelectedControlId(null)
+    setGazeBarHoverId(null)
+    setDwellProgress(null)
+    hoverDwellRef.current = null
+  }, [pilotExperiment])
 
   // 어떤 입력을 표시할지
   const usingGaze = trackerStatus === 'ready' && gaze.x >= 0
+  const needsCalibration = trackerStatus === 'ready' && !hasGazeData
   const point = usingGaze ? gaze : mouse
 
   // 6) Edge Detector 갱신 — point 가 바뀔 때마다 update, 진입/이탈 이벤트는 콘솔에 로그
@@ -348,7 +359,7 @@ export function App(): JSX.Element {
   }, [edgeSnapshot.state, point.x, point.y, viewport.w, viewport.h])
 
   const inputSource = usingGaze
-    ? 'WebGazer (OneEuro filtered)'
+    ? 'WebGazer (blink-stabilized)'
     : trackerStatus === 'loading'
       ? 'mouse (gaze loading…)'
       : trackerStatus === 'error'
@@ -586,34 +597,39 @@ export function App(): JSX.Element {
 
   return (
     <>
-      <EdgeZones viewport={viewport} snapshot={edgeSnapshot} visible={debugVisible} />
+      <EdgeZones viewport={viewport} snapshot={edgeSnapshot} visible={debugVisible && !pilotExperiment} />
 
-      <GazeBar
-        edge={gazeBarEdge}
-        viewport={viewport}
-        gazePoint={gazeBarGaze}
-        items={GAZEBAR_ITEMS}
-        onHoverChange={handleHoverChange}
-        valuesById={sliderValues}
-        liveValue={liveSliderValue}
-        lockedItemId={selectedControlId}
-      />
+      {!pilotExperiment && (
+        <GazeBar
+          edge={gazeBarEdge}
+          viewport={viewport}
+          gazePoint={gazeBarGaze}
+          items={GAZEBAR_ITEMS}
+          onHoverChange={handleHoverChange}
+          valuesById={sliderValues}
+          liveValue={liveSliderValue}
+          lockedItemId={selectedControlId}
+        />
+      )}
 
-      <GazeDot
-        x={effectiveGaze?.x ?? point.x}
-        y={effectiveGaze?.y ?? point.y}
-        visible={debugVisible}
-        snapAnimating={snapAnimating}
-        dwellProgress={dwellProgress?.progress ?? null}
-      />
+      {!pilotExperiment && (
+        <GazeDot
+          x={effectiveGaze?.x ?? point.x}
+          y={effectiveGaze?.y ?? point.y}
+          visible={debugVisible}
+          snapAnimating={snapAnimating}
+          dwellProgress={dwellProgress?.progress ?? null}
+        />
+      )}
 
-      {debugVisible && (
+      {debugVisible && !pilotExperiment && (
         <DebugHud
           point={point}
           viewport={viewport}
           clickThrough={clickThrough}
           inputSource={inputSource}
           trackerStatus={trackerStatus}
+          needsCalibration={needsCalibration}
           headStatus={headStatus}
           headError={headError}
           head={head}
@@ -643,6 +659,17 @@ export function App(): JSX.Element {
         <Evaluation
           gazePoint={usingGaze ? { x: gaze.x, y: gaze.y } : null}
           onDone={() => setEvaluating(false)}
+        />
+      )}
+
+      {pilotExperiment && (
+        <PilotExperiment
+          viewport={viewport}
+          gazePoint={usingGaze ? { x: gaze.x, y: gaze.y, t: gaze.t } : null}
+          head={head}
+          edgeSnapshot={edgeSnapshot}
+          onDone={() => setPilotExperiment(false)}
+          onRequestCalibration={() => setCalibrating(true)}
         />
       )}
     </>
