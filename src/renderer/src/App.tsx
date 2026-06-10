@@ -27,6 +27,7 @@ import {
   type HeadSample,
   type HeadTrackerStatus
 } from './perception/face-landmarker'
+import { createTobiiTracker } from './perception/tobii'
 import { EdgeDetector, type Edge, type EdgeSnapshot } from './perception/edge-detector'
 import { DEFAULT_SNAP_CONFIG } from './perception/intent-score'
 import { SliderIntentMapper, DEFAULT_SLIDER_CONFIG } from './perception/slider-mapper'
@@ -97,7 +98,9 @@ export function App(): JSX.Element {
   const [calibrating, setCalibrating] = useState(false)
   const [evaluating, setEvaluating] = useState(false)
   const [pilotExperiment, setPilotExperiment] = useState(false)
+  const [gazeProvider, setGazeProvider] = useState<'tobii' | 'webgazer' | 'mouse'>('mouse')
   const trackerRef = useRef<ReturnType<typeof createGazeTracker> | null>(null)
+  const gazeProviderRef = useRef(gazeProvider)
 
   // Edge detector — IntentTracker + Rail FSM (snapping).
   const edgeDetectorRef = useRef(new EdgeDetector(DEFAULT_SNAP_CONFIG))
@@ -157,6 +160,10 @@ export function App(): JSX.Element {
   // OS bridge throttle — 같은 항목에 대해 100ms 마다 최대 1회 push
   const lastOsPushRef = useRef<{ itemId: string | null; t: number }>({ itemId: null, t: 0 })
 
+  useEffect(() => {
+    gazeProviderRef.current = gazeProvider
+  }, [gazeProvider])
+
   // 1) 시선 + 머리 트래커 init — 카메라 권한 확인 후 순차 시작
   // 순서가 중요: WebGazer 가 video element 를 만든 다음에야 FaceLandmarker 가 그걸 잡을 수 있음.
   useEffect(() => {
@@ -164,9 +171,11 @@ export function App(): JSX.Element {
     const gazeTracker = createGazeTracker()
     const headTracker = createHeadTracker()
     trackerRef.current = gazeTracker
+    setGazeProvider('webgazer')
 
     const offGazeSample = gazeTracker.onSample((s: GazeSample) => {
       if (cancelled) return
+      if (gazeProviderRef.current === 'tobii') return
       // OneEuro 필터된 좌표 사용
       setGaze({ x: s.fx, y: s.fy, t: s.t })
       setHasGazeData(true)
@@ -174,17 +183,20 @@ export function App(): JSX.Element {
 
     const offGazeStatus = gazeTracker.onStatus((s, err) => {
       if (cancelled) return
+      if (gazeProviderRef.current === 'tobii') return
       setTrackerStatus(s)
       setTrackerError(err ?? null)
     })
 
     const offHeadSample = headTracker.onSample((s: HeadSample) => {
       if (cancelled) return
+      if (gazeProviderRef.current === 'tobii') return
       setHead(s)
     })
 
     const offHeadStatus = headTracker.onStatus((s, err) => {
       if (cancelled) return
+      if (gazeProviderRef.current === 'tobii') return
       setHeadStatus(s)
       setHeadError(err ?? null)
     })
@@ -215,6 +227,43 @@ export function App(): JSX.Element {
       offHeadStatus()
       headTracker.stop()
       gazeTracker.stop()
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const tobiiTracker = createTobiiTracker()
+    const offSample = tobiiTracker.onSample(({ gaze: gazeSample, head: headSample }) => {
+      if (cancelled) return
+      gazeProviderRef.current = 'tobii'
+      setGazeProvider('tobii')
+      setGaze({ x: gazeSample.fx, y: gazeSample.fy, t: gazeSample.t })
+      setHead(headSample)
+      setHasGazeData(gazeSample.fx >= 0 && gazeSample.fy >= 0)
+    })
+    const offGazeStatus = tobiiTracker.onGazeStatus((s, err) => {
+      if (cancelled) return
+      if (s === 'ready' || gazeProviderRef.current === 'tobii') {
+        setTrackerStatus(s)
+        setTrackerError(err ?? null)
+      }
+    })
+    const offHeadStatus = tobiiTracker.onHeadStatus((s, err) => {
+      if (cancelled) return
+      if (s === 'ready' || gazeProviderRef.current === 'tobii') {
+        setHeadStatus(s)
+        setHeadError(err ?? null)
+      }
+    })
+
+    void tobiiTracker.start()
+
+    return () => {
+      cancelled = true
+      offSample()
+      offGazeStatus()
+      offHeadStatus()
+      void tobiiTracker.stop()
     }
   }, [])
 
@@ -359,7 +408,9 @@ export function App(): JSX.Element {
   }, [edgeSnapshot.state, point.x, point.y, viewport.w, viewport.h])
 
   const inputSource = usingGaze
-    ? 'WebGazer (blink-stabilized)'
+    ? gazeProvider === 'tobii'
+      ? 'Tobii Eye Tracker 5'
+      : 'WebGazer (blink-stabilized)'
     : trackerStatus === 'loading'
       ? 'mouse (gaze loading…)'
       : trackerStatus === 'error'

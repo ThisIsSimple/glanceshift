@@ -9,6 +9,7 @@
   "scripts": {
     "copy:webgazer": "node scripts/copy-webgazer.mjs",
     "compare:evals": "node scripts/compare-evals.mjs",
+    "build:tobii": "powershell -ExecutionPolicy Bypass -File tools/tobii-bridge/build.ps1",
     "predev": "npm run copy:webgazer",
     "prebuild": "npm run copy:webgazer",
     "postinstall": "node scripts/copy-webgazer.mjs || true",

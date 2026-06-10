@@ -21,6 +21,7 @@ import { promisify } from 'node:util'
 import { writeFile, mkdir, access } from 'node:fs/promises'
 import { constants as FS } from 'node:fs'
 import loudness from 'loudness'
+import { startTobiiBridge, stopTobiiBridge, tobiiBridgeStatus } from './tobii-bridge'
 
 const execAsync = promisify(exec)
 
@@ -189,6 +190,18 @@ ipcMain.handle('glanceshift:request-camera-permission', async () => {
   return systemPreferences.askForMediaAccess('camera')
 })
 
+ipcMain.handle('glanceshift:start-tobii', async () => {
+  return startTobiiBridge(overlayWindow)
+})
+
+ipcMain.handle('glanceshift:stop-tobii', async () => {
+  stopTobiiBridge(overlayWindow)
+})
+
+ipcMain.handle('glanceshift:get-tobii-status', async () => {
+  return tobiiBridgeStatus()
+})
+
 // ===== OS Action Bridge — Phase 7 =====
 //
 // 시스템 볼륨은 loudness 패키지 (macOS 에선 내부적으로 osascript 호출).
@@ -340,6 +353,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('will-quit', () => {
+  stopTobiiBridge(overlayWindow)
   globalShortcut.unregisterAll()
 })
 
