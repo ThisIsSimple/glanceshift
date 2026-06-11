@@ -78,9 +78,9 @@ const UPRIGHT_MAX_DEG = DEFAULT_SLIDER_CONFIG.uprightMaxDeg
 const RELEASE_GAZE_OUT_MS = 2000
 const EXPERIMENT_EDGE: Edge = 'bottom'
 const SIDEBAR_TARGET_HITBOXES = [
-  { center: 0.14, majorFrac: 0.15, edgeFrac: 0.1, edgeMaxPx: 106 },
+  { center: 0.14, majorFrac: 0.17, edgeFrac: 0.13, edgeMaxPx: 132 },
   { center: 0.5, majorFrac: 0.1, edgeFrac: 0.065, edgeMaxPx: 76 },
-  { center: 0.86, majorFrac: 0.15, edgeFrac: 0.1, edgeMaxPx: 106 }
+  { center: 0.86, majorFrac: 0.17, edgeFrac: 0.13, edgeMaxPx: 132 }
 ] as const
 
 const RUN_HEADERS: Array<keyof RunRow & string> = [
@@ -602,6 +602,8 @@ export function PilotExperiment({
       simRef.current = null
       setSnapshot(snap)
       setUpcoming([])
+      await mixerRef.current.stop()
+      setAudioReady(false)
 
       if (isPracticeRef.current) {
         if (runFlowRef.current === 'try') {
@@ -771,12 +773,9 @@ export function PilotExperiment({
     const runStartVolumes = { ...PILOT_INITIAL_VOLUMES }
     volumesRef.current = runStartVolumes
     setVolumes(runStartVolumes)
-    if (!audioReady) {
-      await mixerRef.current.start(runStartVolumes)
-      setAudioReady(true)
-    } else {
-      mixerRef.current.setVolumes(runStartVolumes)
-    }
+    await mixerRef.current.stop()
+    await mixerRef.current.start(runStartVolumes)
+    setAudioReady(true)
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
     setCondition(nextCondition)
     conditionRef.current = nextCondition
@@ -817,7 +816,7 @@ export function PilotExperiment({
   const startPilotFlow = async (): Promise<void> => {
     resetPilotSession()
     runFlowRef.current = 'pilot'
-    await startRun(PILOT_CONDITION_ORDER[0], true)
+    await startRun(PILOT_CONDITION_ORDER[0], false)
   }
 
   const startTryMode = async (nextCondition: PilotCondition): Promise<void> => {
@@ -839,7 +838,7 @@ export function PilotExperiment({
       setConditionIndex(next)
       conditionIndexRef.current = next
       setCondition(PILOT_CONDITION_ORDER[next])
-      await startRun(PILOT_CONDITION_ORDER[next], true)
+      await startRun(PILOT_CONDITION_ORDER[next], false)
     }
   }
 

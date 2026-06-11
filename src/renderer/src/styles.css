@@ -869,6 +869,7 @@
   bottom: 0;
   left: 0;
   right: 0;
+  overflow: visible;
 }
 
 .pilot-mixer-overlay.glanceshift {
@@ -882,6 +883,37 @@
 .pilot-mixer-overlay.glanceshift.edge-bottom {
   width: auto;
   height: min(122px, 13vh);
+}
+
+.pilot-mixer-overlay.glanceshift.edge-bottom {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pilot-mixer-overlay.glanceshift.edge-bottom::before {
+  content: "";
+  position: absolute;
+  left: -3vw;
+  right: -3vw;
+  bottom: 0;
+  height: min(116px, 12vh);
+  background: rgba(17, 21, 29, 0.84);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  clip-path: polygon(
+    0 40%,
+    12% 26%,
+    26% 10%,
+    40% 17%,
+    50% 34%,
+    60% 17%,
+    74% 10%,
+    88% 26%,
+    100% 40%,
+    100% 100%,
+    0 100%
+  );
+  pointer-events: none;
 }
 
 .pilot-mixer-title {
@@ -966,6 +998,8 @@
   padding: 8px clamp(48px, 7vw, 132px);
   box-sizing: border-box;
   grid-template-columns: none;
+  position: relative;
+  z-index: 1;
 }
 
 .pilot-mixer-overlay.glanceshift.edge-top .pilot-mixer-target,
@@ -974,18 +1008,19 @@
   height: min(76px, calc(100% - 12px));
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
+  clip-path: polygon(10% 0, 90% 0, 100% 100%, 0 100%);
   padding: 10px 12px 8px;
 }
 
 .pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-target:nth-child(1),
 .pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-target:nth-child(3) {
-  transform: translateY(-12px);
+  transform: translateY(-26px);
 }
 
 .pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-target:nth-child(2) {
   flex-basis: clamp(92px, 10vw, 190px);
   height: min(66px, calc(100% - 18px));
-  transform: translateY(6px);
+  transform: translateY(8px);
 }
 
 .pilot-mixer-overlay.glanceshift.edge-left .pilot-mixer-targets,
