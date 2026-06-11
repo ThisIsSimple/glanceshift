@@ -10,7 +10,7 @@
 
 import { memo } from 'react'
 import type { EdgeSnapshot, Edge } from '../perception/edge-detector'
-import { railThickness } from '../perception/geometry'
+import { gazeBarCenterOffset } from '../perception/geometry'
 
 type Props = {
   /** 화면 viewport */
@@ -141,32 +141,27 @@ function SnappingZones({
       {railEdge === 'right' && (
         <div
           className="edge-rail-line"
-          style={{ right: railThicknessHalfPx(viewport), top: viewport.h * 0.2, width: 1, height: viewport.h * 0.6 }}
+          style={{ right: gazeBarCenterOffset(), top: viewport.h * 0.2, width: 1, height: viewport.h * 0.6 }}
         />
       )}
       {railEdge === 'left' && (
         <div
           className="edge-rail-line"
-          style={{ left: railThicknessHalfPx(viewport), top: viewport.h * 0.2, width: 1, height: viewport.h * 0.6 }}
+          style={{ left: gazeBarCenterOffset(), top: viewport.h * 0.2, width: 1, height: viewport.h * 0.6 }}
         />
       )}
       {railEdge === 'top' && (
         <div
           className="edge-rail-line"
-          style={{ top: railThicknessHalfPx(viewport), left: viewport.w * 0.2, height: 1, width: viewport.w * 0.6 }}
+          style={{ top: gazeBarCenterOffset(), left: viewport.w * 0.2, height: 1, width: viewport.w * 0.6 }}
         />
       )}
       {railEdge === 'bottom' && (
         <div
           className="edge-rail-line"
-          style={{ bottom: railThicknessHalfPx(viewport), left: viewport.w * 0.2, height: 1, width: viewport.w * 0.6 }}
+          style={{ bottom: gazeBarCenterOffset(), left: viewport.w * 0.2, height: 1, width: viewport.w * 0.6 }}
         />
       )}
     </>
   )
-}
-
-/** rail line 위치 = 변에서 thickness/2 안쪽 (GazeBar 중심선과 일치). */
-function railThicknessHalfPx(viewport: { w: number; h: number }): number {
-  return railThickness(viewport) / 2
 }

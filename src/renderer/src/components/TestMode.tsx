@@ -3,14 +3,21 @@
  *
  *   Cmd/Ctrl+Shift+T 로 진입. ESC 로 취소.
  *
- * 흐름 (trial 반복):
- *   wait(랜덤 3–8초) → prompt("볼륨을 NN%로 맞추세요") → adjust → reimmersion → 다음 trial
+ * 시나리오 (영화 시청):
+ *   화면 중앙에 영화를 틀어 두고 본다(앱은 투명 오버레이라 영화가 그대로 보임).
+ *   trial 반복:
+ *     wait(랜덤 3–8초, 영화 시청) → event: 앱이 볼륨을 0 으로 떨어뜨리고
+ *     "볼륨을 NN% 로 올리세요" 미션 표시 → 참가자 복구 → 시선이 중앙으로 복귀·안정화 → 다음 trial
  *
  * 두 조건:
- *   · gaze     : GlanceShift(시선+머리). 볼륨 모드 진입/이탈을 관찰, 최종 이탈 시 볼륨을 기록.
- *   · baseline : 외장 다이얼. 앱은 볼륨을 못 읽으므로 Space 키로 "완료" 마킹 (타이밍만).
+ *   · gaze     : GlanceShift(시선+머리). 앱이 볼륨을 0 으로 떨어뜨리고, 참가자가 시선+머리로 복구.
+ *                볼륨 모드 진입/이탈을 관찰, 최종 이탈 시 OS 볼륨을 기록.
+ *   · baseline : 외장 다이얼. 앱은 다이얼을 못 만지므로 진행자가 다이얼을 0 으로 내린 뒤 미션 시작,
+ *                참가자가 복구하고 Space 로 "완료" 마킹 (타이밍만).
  *
- * 재몰입(re-immersion) proxy: 완료 후 시선이 중앙(게임) 영역으로 복귀·안정화까지의 시간.
+ * 측정:
+ *   A. 볼륨 조절 완료 시간 (event → 모드 최종 이탈 / Space)
+ *   B. 시선 이탈→복귀 시간 (event → 중앙 영화 영역에서 이탈했다 복귀·안정화까지)
  *
  * 수집 데이터는 trial 요약 CSV + raw 시계열 CSV 로 저장 (userData/eval-logs/).
  * 측정/직렬화 로직은 perception/test-session.ts (pure) 에 위임. UI/타이밍 패턴은 Evaluation.tsx 미러.
@@ -19,7 +26,8 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   centralRegionPx,
-  computeReimmersion,
+  computeGazeExcursion,
+  inRegion,
   toRawSamplesCSV,
   toTrialSummaryCSV,
   type RawSample,
@@ -42,40 +50,24 @@ type Props = {
   /** edge detector 상태 라벨 */
   edgeState: string
   viewport: { w: number; h: number }
+  /** event 시 볼륨을 강제로 세팅 (OS + App 상태 동기화). gaze 조건에서 0 으로 드롭하는 데 사용. */
+  onForceVolume: (v: number) => void
   onDone: () => void
 }
 
 type Screen = 'intro' | 'running' | 'complete'
 
-// ===== 타이밍 상수 =====
+// ===== 타이밍/프로토콜 상수 =====
 const WAIT_MIN_MS = 3000
 const WAIT_MAX_MS = 8000
-const ADJUST_TIMEOUT_MS = 25_000 // 첫 진입/완료 없을 때 안전 타임아웃
-const SETTLE_HOLD_MS = 800 // 중앙 영역 연속 체류 → 재몰입 완료
-const REIM_TIMEOUT_MS = 8000 // 재몰입 측정 최대 시간
-const DEFAULT_TRIALS = 12
+const MISSION_TIMEOUT_MS = 30_000 // 복구/복귀 안전 타임아웃
+const SETTLE_HOLD_MS = 800 // 중앙(영화) 영역 연속 체류 → 복귀 완료
+const DEFAULT_TRIALS = 10
+const DROP_TO_PCT = 0 // event 시 볼륨을 떨어뜨리는 값
+const DEFAULT_TARGET_PCT = 50 // 미션 목표 볼륨
 
-/** 재몰입 판정용 중앙 영역 (viewport 비율) — 화면 중앙 50% 사각형 */
+/** 중앙(영화) 영역 (viewport 비율) — 화면 중앙 50% 사각형 */
 const CENTRAL_REGION_FRAC = { x0: 0.25, y0: 0.25, x1: 0.75, y1: 0.75 }
-
-/** 목표 볼륨 리스트 생성 — 10..90% 사이 5단위 값에서 무작위. */
-function makeTargets(n: number): number[] {
-  const pool: number[] = []
-  for (let v = 10; v <= 90; v += 5) pool.push(v)
-  const out: number[] = []
-  let last = -1
-  for (let i = 0; i < n; i++) {
-    let t = pool[Math.floor(Math.random() * pool.length)]
-    // 직전과 동일/근접한 목표는 가급적 피해 조절 폭을 확보
-    let guard = 0
-    while (Math.abs(t - last) < 15 && guard++ < 8) {
-      t = pool[Math.floor(Math.random() * pool.length)]
-    }
-    out.push(t)
-    last = t
-  }
-  return out
-}
 
 function randomWait(): number {
   return WAIT_MIN_MS + Math.random() * (WAIT_MAX_MS - WAIT_MIN_MS)
@@ -87,17 +79,18 @@ type Engine = {
   trialIdx: number
   waitUntil: number
   // 현재 trial
-  target: number
-  promptAt: number
-  promptWall: number
+  eventAt: number
+  eventWall: number
   startVolPct: number
+  // 볼륨 조절(gaze) 추적
   firstEntryAt: number | null
   numEntries: number
   inMode: boolean
-  exitAt: number
-  reimStartIdx: number
-  reimHoldStart: number | null
-  reimStart: number
+  adjustDoneAt: number | null // gaze: 마지막 모드 이탈 / baseline: Space
+  // 시선 이탈→복귀 추적
+  gazeLeftAt: number | null
+  returnHoldStart: number | null
+  missionStartIdx: number
 }
 
 export function TestMode({
@@ -108,16 +101,17 @@ export function TestMode({
   liveVolume,
   edgeState,
   viewport,
+  onForceVolume,
   onDone
 }: Props): JSX.Element {
   const [screen, setScreen] = useState<Screen>('intro')
   const [condition, setCondition] = useState<TestCondition>('gaze')
   const [participantId, setParticipantId] = useState('')
   const [numTrials, setNumTrials] = useState(DEFAULT_TRIALS)
+  const [targetPct, setTargetPct] = useState(DEFAULT_TARGET_PCT)
 
   // 진행 표시용 (RAF 엔진이 전이 시에만 갱신)
   const [activeTrialIdx, setActiveTrialIdx] = useState(0)
-  const [activeTarget, setActiveTarget] = useState<number | null>(null)
   const [uiPhase, setUiPhase] = useState<RawSample['phase']>('wait')
 
   const [session, setSession] = useState<TestSession | null>(null)
@@ -139,6 +133,8 @@ export function TestMode({
   edgeStateRef.current = edgeState
   const viewportRef = useRef(viewport)
   viewportRef.current = viewport
+  const onForceVolumeRef = useRef(onForceVolume)
+  onForceVolumeRef.current = onForceVolume
   const onDoneRef = useRef(onDone)
   onDoneRef.current = onDone
 
@@ -164,7 +160,7 @@ export function TestMode({
     if (screen !== 'running') return
 
     const cond = condition
-    const targets = makeTargets(numTrials)
+    const target = targetPct
     const sessionStart = performance.now()
     const sessionWall = Date.now()
     const raw: RawSample[] = []
@@ -175,54 +171,46 @@ export function TestMode({
       phase: 'wait',
       trialIdx: 0,
       waitUntil: sessionStart + randomWait(),
-      target: targets[0],
-      promptAt: 0,
-      promptWall: 0,
+      eventAt: 0,
+      eventWall: 0,
       startVolPct: 0,
       firstEntryAt: null,
       numEntries: 0,
       inMode: false,
-      exitAt: 0,
-      reimStartIdx: 0,
-      reimHoldStart: null,
-      reimStart: 0
+      adjustDoneAt: null,
+      gazeLeftAt: null,
+      returnHoldStart: null,
+      missionStartIdx: 0
     }
 
     let raf = 0
     let cancelled = false
     doneKeyRef.current = false
 
-    const finalizeTrial = (now: number, settledOverride?: boolean): void => {
-      // 재몰입 계산 (reimmersion 단계 raw slice)
-      const reimSamples = raw.slice(eng.reimStartIdx)
-      const reim =
-        settledOverride === false
-          ? { reimmersionMs: null, pathPx: null as number | null, settled: false }
-          : computeReimmersion(reimSamples, region, SETTLE_HOLD_MS)
+    const finalizeTrial = (now: number): void => {
+      const missionSamples = raw.slice(eng.missionStartIdx)
+      const exc = computeGazeExcursion(missionSamples, region, SETTLE_HOLD_MS)
 
       const finalVolPct = cond === 'gaze' ? volRef.current * 100 : null
-      const absErrorPct = finalVolPct != null ? Math.abs(finalVolPct - eng.target) : null
-      const noEntry = cond === 'gaze' && eng.firstEntryAt == null
+      const absErrorPct = finalVolPct != null ? Math.abs(finalVolPct - target) : null
 
       trials.push({
         condition: cond,
         trialIdx: eng.trialIdx,
-        targetPct: eng.target,
+        targetPct: target,
         startVolPct: eng.startVolPct,
         finalVolPct,
         absErrorPct,
-        promptShownAt: eng.promptWall,
+        eventShownAt: eng.eventWall,
+        timeToAdjustMs: eng.adjustDoneAt != null ? eng.adjustDoneAt - eng.eventAt : null,
         timeToFirstEntryMs:
-          cond === 'gaze' && eng.firstEntryAt != null ? eng.firstEntryAt - eng.promptAt : null,
-        adjustTimeMs:
-          cond === 'gaze' && eng.firstEntryAt != null && !noEntry
-            ? eng.exitAt - eng.firstEntryAt
-            : null,
-        totalTimeMs: noEntry ? null : eng.exitAt - eng.promptAt,
+          cond === 'gaze' && eng.firstEntryAt != null ? eng.firstEntryAt - eng.eventAt : null,
         numModeEntries: eng.numEntries,
-        reimmersionMs: reim.reimmersionMs,
-        reimmersionPathPx: reim.pathPx,
-        settled: reim.settled
+        timeToGazeLeaveMs: exc.timeToLeaveMs,
+        gazeAwayMs: exc.gazeAwayMs,
+        timeToReturnMs: exc.timeToReturnMs,
+        gazePathPx: exc.pathPx,
+        settled: exc.settled
       })
 
       // 다음 trial 준비 (또는 종료)
@@ -244,15 +232,15 @@ export function TestMode({
         return
       }
       eng.trialIdx = next
-      eng.target = targets[next]
       eng.phase = 'wait'
       eng.waitUntil = now + randomWait()
       eng.firstEntryAt = null
       eng.numEntries = 0
       eng.inMode = false
-      eng.reimHoldStart = null
+      eng.adjustDoneAt = null
+      eng.gazeLeftAt = null
+      eng.returnHoldStart = null
       setActiveTrialIdx(next)
-      setActiveTarget(null)
       setUiPhase('wait')
     }
 
@@ -281,79 +269,60 @@ export function TestMode({
       // 2) phase 진행
       if (eng.phase === 'wait') {
         if (now >= eng.waitUntil) {
-          eng.phase = 'adjust'
-          eng.promptAt = now
-          eng.promptWall = Date.now()
-          eng.startVolPct = volRef.current * 100
+          // === EVENT: 볼륨 드롭 + 미션 표시 ===
+          if (cond === 'gaze') onForceVolumeRef.current(DROP_TO_PCT / 100)
+          eng.phase = 'mission'
+          eng.eventAt = now
+          eng.eventWall = Date.now()
+          eng.startVolPct = DROP_TO_PCT
           eng.firstEntryAt = null
           eng.numEntries = 0
           eng.inMode = false
-          setActiveTarget(eng.target)
-          setUiPhase('adjust')
+          eng.adjustDoneAt = null
+          eng.gazeLeftAt = null
+          eng.returnHoldStart = null
+          eng.missionStartIdx = raw.length // 이 프레임은 아직 wait 로 push 됨 → 다음부터 mission
+          setUiPhase('mission')
         }
-      } else if (eng.phase === 'adjust') {
+      } else if (eng.phase === 'mission') {
+        const inCentral = inRegion(gx, gy, region)
+
+        // (B) 시선 이탈 — 중앙에서 처음 벗어난 시점
+        if (eng.gazeLeftAt == null && !inCentral) eng.gazeLeftAt = now
+
+        // (A) 볼륨 조절 완료 추적
         if (cond === 'gaze') {
           const isIn = selected === 'volume'
           if (isIn && !eng.inMode) {
-            // 진입
             eng.inMode = true
             eng.numEntries += 1
             if (eng.firstEntryAt == null) eng.firstEntryAt = now
           } else if (!isIn && eng.inMode) {
-            // 이탈 → reimmersion 측정 시작 (재진입 시 취소됨)
             eng.inMode = false
-            eng.exitAt = now
-            eng.phase = 'reimmersion'
-            eng.reimStart = now
-            eng.reimStartIdx = raw.length
-            eng.reimHoldStart = null
-            setUiPhase('reimmersion')
-          } else if (eng.firstEntryAt == null && now - eng.promptAt >= ADJUST_TIMEOUT_MS) {
-            // 진입 한 번도 없이 타임아웃 → 실패 처리
-            eng.exitAt = now
-            finalizeTrial(now, false)
+            eng.adjustDoneAt = now // 마지막 이탈 시각으로 계속 갱신
           }
-        } else {
-          // baseline — Space 완료
-          if (doneKeyRef.current) {
-            doneKeyRef.current = false
-            eng.exitAt = now
-            eng.phase = 'reimmersion'
-            eng.reimStart = now
-            eng.reimStartIdx = raw.length
-            eng.reimHoldStart = null
-            setUiPhase('reimmersion')
-          } else if (now - eng.promptAt >= ADJUST_TIMEOUT_MS) {
-            eng.exitAt = now
-            finalizeTrial(now, false)
-          }
+        } else if (doneKeyRef.current) {
+          doneKeyRef.current = false
+          eng.adjustDoneAt = now
         }
-      } else if (eng.phase === 'reimmersion') {
-        // gaze: 재진입하면 다시 adjust 로 (완료 아님)
-        if (cond === 'gaze' && selected === 'volume') {
-          eng.inMode = true
-          eng.numEntries += 1
-          eng.phase = 'adjust'
-          eng.reimHoldStart = null
-          setUiPhase('adjust')
-        } else {
-          const inCentral =
-            gx >= 0 && gy >= 0 && gx >= region.x0 && gx <= region.x1 && gy >= region.y0 && gy <= region.y1
-          if (inCentral) {
-            if (eng.reimHoldStart == null) eng.reimHoldStart = now
-            if (now - eng.reimHoldStart >= SETTLE_HOLD_MS) {
-              finalizeTrial(now, true)
-              raf = requestAnimationFrame(tick)
-              return
-            }
-          } else {
-            eng.reimHoldStart = null
-          }
-          if (now - eng.reimStart >= REIM_TIMEOUT_MS) {
-            finalizeTrial(now, true) // computeReimmersion 이 settled=false 처리
-            raf = requestAnimationFrame(tick)
+
+        // (B) 시선 복귀·안정화 — 이탈한 뒤 중앙에 SETTLE_HOLD 연속 체류
+        if (eng.gazeLeftAt != null && inCentral) {
+          if (eng.returnHoldStart == null) eng.returnHoldStart = now
+          if (now - eng.returnHoldStart >= SETTLE_HOLD_MS) {
+            finalizeTrial(now)
+            if (!cancelled) raf = requestAnimationFrame(tick)
             return
           }
+        } else {
+          eng.returnHoldStart = null
+        }
+
+        // 안전 타임아웃
+        if (now - eng.eventAt >= MISSION_TIMEOUT_MS) {
+          finalizeTrial(now)
+          if (!cancelled) raf = requestAnimationFrame(tick)
+          return
         }
       }
 
@@ -361,7 +330,6 @@ export function TestMode({
     }
 
     setActiveTrialIdx(0)
-    setActiveTarget(null)
     setUiPhase('wait')
     raf = requestAnimationFrame(tick)
 
@@ -417,7 +385,7 @@ export function TestMode({
     return (
       <div className="eval-root">
         <div className="eval-prompt">
-          <h3>볼륨 조절 테스트</h3>
+          <h3>볼륨 조절 테스트 (영화 시청 시나리오)</h3>
           <div className="eval-field">
             <label>condition</label>
             <div className="eval-pose-grid">
@@ -439,15 +407,15 @@ export function TestMode({
           </div>
           {condition === 'gaze' ? (
             <p>
-              랜덤한 타이밍에 목표 볼륨이 표시됩니다. <strong>시선+머리 기울임</strong>으로 볼륨을
-              맞춰 주세요. 조절 모드를 빠져나오면 한 trial 이 끝나고, 시선이 화면 중앙으로 돌아가는
-              시간(재몰입)이 측정됩니다. ESC 취소.
+              화면 중앙에 영화를 틀어 두고 보세요. 랜덤한 타이밍에 <strong>볼륨이 0 으로 떨어지고</strong>{' '}
+              "<strong>{targetPct}%</strong> 로 올리세요" 미션이 뜹니다. <strong>시선+머리 기울임</strong>으로
+              볼륨을 복구한 뒤 다시 영화(중앙)를 보면 한 trial 이 끝납니다. ESC 취소.
             </p>
           ) : (
             <p>
-              랜덤한 타이밍에 목표 볼륨이 표시됩니다. <strong>외장 다이얼</strong>로 볼륨을 맞춘 뒤
-              <strong> Space</strong> 키로 완료를 표시해 주세요. 이후 시선이 중앙으로 돌아가는
-              시간(재몰입)이 측정됩니다. ESC 취소.
+              화면 중앙에 영화를 틀어 두고 보세요. 미션이 뜨면(진행자가 다이얼을 0 으로) <strong>외장 다이얼</strong>로{' '}
+              <strong>{targetPct}%</strong> 까지 맞춘 뒤 <strong>Space</strong> 로 완료를 표시하고 다시
+              영화(중앙)를 보세요. ESC 취소.
             </p>
           )}
           <div className="eval-field-row">
@@ -469,6 +437,18 @@ export function TestMode({
                 onChange={(e) => setNumTrials(Math.max(1, parseInt(e.target.value || '1', 10)))}
               />
             </div>
+            <div className="eval-field">
+              <label>목표 볼륨 %</label>
+              <input
+                type="number"
+                value={targetPct}
+                min={1}
+                max={100}
+                onChange={(e) =>
+                  setTargetPct(Math.max(1, Math.min(100, parseInt(e.target.value || '50', 10))))
+                }
+              />
+            </div>
           </div>
           <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
             저장:{' '}
@@ -485,18 +465,18 @@ export function TestMode({
   }
 
   if (screen === 'running') {
-    const showPrompt = uiPhase === 'adjust' && activeTarget != null
+    const showPrompt = uiPhase === 'mission'
     return (
       <div className="eval-root running">
         <div className="test-corner">
           {activeTrialIdx + 1} / {numTrials} · {condition}
         </div>
         {showPrompt && (
-          <div className="test-prompt" style={{ left: viewport.w / 2, top: viewport.h * 0.18 }}>
+          <div className="test-prompt" style={{ left: viewport.w / 2, top: viewport.h * 0.12 }}>
             <div className="test-prompt-label">볼륨을</div>
-            <div className="test-prompt-value">{activeTarget}%</div>
+            <div className="test-prompt-value">{targetPct}%</div>
             <div className="test-prompt-label">
-              {condition === 'gaze' ? '로 맞춰 주세요' : '로 맞춘 뒤 Space'}
+              {condition === 'gaze' ? '로 올려 주세요' : '로 맞춘 뒤 Space'}
             </div>
           </div>
         )}
@@ -508,12 +488,13 @@ export function TestMode({
   if (screen === 'complete' && session) {
     const t = session.trials
     const n = t.length || 1
-    const totals = t.map((x) => x.totalTimeMs).filter((v): v is number => v != null)
-    const meanTotal = totals.length ? totals.reduce((a, b) => a + b, 0) / totals.length : null
-    const errs = t.map((x) => x.absErrorPct).filter((v): v is number => v != null)
-    const meanErr = errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : null
-    const reims = t.map((x) => x.reimmersionMs).filter((v): v is number => v != null)
-    const meanReim = reims.length ? reims.reduce((a, b) => a + b, 0) / reims.length : null
+    const mean = (vals: (number | null)[]): number | null => {
+      const xs = vals.filter((v): v is number => v != null)
+      return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null
+    }
+    const meanAdjust = mean(t.map((x) => x.timeToAdjustMs))
+    const meanReturn = mean(t.map((x) => x.timeToReturnMs))
+    const meanErr = mean(t.map((x) => x.absErrorPct))
     const settleRate = t.filter((x) => x.settled).length / n
 
     return (
@@ -524,9 +505,15 @@ export function TestMode({
           </h3>
           <div className="eval-stats">
             <div className="eval-stat">
-              <span className="eval-stat-label">mean 도달시간</span>
+              <span className="eval-stat-label">mean 조절시간</span>
               <span className="eval-stat-value">
-                {meanTotal != null ? `${(meanTotal / 1000).toFixed(2)} s` : '—'}
+                {meanAdjust != null ? `${(meanAdjust / 1000).toFixed(2)} s` : '—'}
+              </span>
+            </div>
+            <div className="eval-stat">
+              <span className="eval-stat-label">mean 이탈→복귀</span>
+              <span className="eval-stat-value">
+                {meanReturn != null ? `${(meanReturn / 1000).toFixed(2)} s` : '—'}
               </span>
             </div>
             <div className="eval-stat">
@@ -536,13 +523,7 @@ export function TestMode({
               </span>
             </div>
             <div className="eval-stat">
-              <span className="eval-stat-label">mean 재몰입</span>
-              <span className="eval-stat-value">
-                {meanReim != null ? `${(meanReim / 1000).toFixed(2)} s` : '—'}
-              </span>
-            </div>
-            <div className="eval-stat">
-              <span className="eval-stat-label">재몰입 성공률</span>
+              <span className="eval-stat-label">복귀 성공률</span>
               <span className="eval-stat-value">{(settleRate * 100).toFixed(0)}%</span>
             </div>
           </div>
@@ -569,7 +550,12 @@ export function TestMode({
           </div>
           {(summaryPath || rawPath) && (
             <p style={{ fontSize: 11, marginTop: 8, color: '#7be38a', wordBreak: 'break-all' }}>
-              {summaryPath && <>저장됨: {summaryPath}<br /></>}
+              {summaryPath && (
+                <>
+                  저장됨: {summaryPath}
+                  <br />
+                </>
+              )}
               {rawPath && <>저장됨: {rawPath}</>}
             </p>
           )}

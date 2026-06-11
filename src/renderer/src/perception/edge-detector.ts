@@ -20,7 +20,7 @@ import {
   type IntentSample,
   type Edge
 } from './intent-score'
-import { railThickness } from './geometry'
+import { gazeBarCenterOffset } from './geometry'
 
 export type { Edge } from './intent-score'
 
@@ -207,19 +207,20 @@ export class EdgeDetector {
 
 /**
  * edge 의 rail (1D 트랙) 의 perpendicular 좌표.
+ * 변에서 GazeBar 독 중심선만큼 안쪽(gazeBarCenterOffset) — locked GazeDot 이 볼륨 UI 정중앙에 박힌다.
  * along-edge 좌표는 호출자가 별도로 clamp.
  */
 export function railPosition(edge: Edge, vp: Viewport): { x: number; y: number } {
-  const thickness = railThickness(vp)
+  const off = gazeBarCenterOffset()
   switch (edge) {
     case 'right':
-      return { x: vp.w - thickness / 2, y: 0 }
+      return { x: vp.w - off, y: 0 }
     case 'left':
-      return { x: thickness / 2, y: 0 }
+      return { x: off, y: 0 }
     case 'top':
-      return { x: 0, y: thickness / 2 }
+      return { x: 0, y: off }
     case 'bottom':
-      return { x: 0, y: vp.h - thickness / 2 }
+      return { x: 0, y: vp.h - off }
   }
 }
 

@@ -1,12 +1,14 @@
 /**
  * Test Session — 볼륨 조절 사용자 실험의 데이터 모델 + CSV 직렬화 (pure functions).
  *
- * 사용처: components/TestMode.tsx 가 trial 별로 raw sample 을 모으고 trial 요약을 만든 뒤
- *         이 모듈로 재몰입(re-immersion) proxy 계산 + CSV 직렬화를 수행한다.
+ * 실험 시나리오 (영화 시청):
+ *   화면 중앙에 영화를 틀어 놓고 본다. 랜덤한 타이밍에 앱이 **볼륨을 0 으로 떨어뜨리고**
+ *   "볼륨을 NN% 로 올리세요" 미션을 준다. 참가자는 (gaze / 외장 다이얼) 로 볼륨을 복구한다.
  *
- * 측정 목표 (실험 설계):
- *   1. 목표 볼륨 도달 시간 — prompt → 볼륨 모드 최종 이탈 (gaze) / prompt → 완료키 (baseline)
- *   2. 조절 후 게임 재몰입 시간 — 최종 이탈 후 시선이 중앙(게임) 영역으로 복귀·안정화까지
+ * 측정 목표:
+ *   A. 볼륨 조절 완료 시간 — event(볼륨 0) → 조절 완료 (gaze: 볼륨 모드 최종 이탈 / baseline: Space)
+ *   B. 시선 이탈→복귀 시간 — event 시점 화면 중앙(영화)에서 시선이 떨어졌다가 다시 중앙으로
+ *      복귀·안정화되기까지. "영화에서 얼마나 오래 끌려 나갔는가" 의 proxy.
  *
  * 두 조건(gaze / baseline)을 동일 포맷으로 기록해 비교 가능하게 한다.
  * (eval-stats.ts 의 toCSV / BOM 패턴을 그대로 따른다.)
@@ -16,9 +18,9 @@ export type TestCondition = 'gaze' | 'baseline'
 
 /** raw 시계열 한 프레임 — 추후 시선 궤적/머리 움직임 분석용 */
 export type RawSample = {
-  /** trial 진행 단계 */
-  phase: 'wait' | 'prompt' | 'adjust' | 'reimmersion'
-  /** 현재 trial index (wait 단계는 직전 완료 trial 다음 번호) */
+  /** trial 진행 단계: wait(영화 시청) → mission(event 이후 복구·복귀) */
+  phase: 'wait' | 'mission'
+  /** 현재 trial index */
   trialIdx: number
   /** ms — 세션 시작(performance.now 기준) 으로부터의 상대 시각 */
   t: number
@@ -41,29 +43,31 @@ export type RawSample = {
 export type TrialSummary = {
   condition: TestCondition
   trialIdx: number
-  /** 지시된 목표 볼륨 (%) */
+  /** 미션 목표 볼륨 (%) */
   targetPct: number
-  /** prompt 직전 OS 볼륨 (%) */
+  /** event 직후(드롭된) 시작 볼륨 (%) — 보통 0 */
   startVolPct: number
   /** 완료 시점 OS 볼륨 (%) — baseline 은 null (앱이 다이얼을 못 읽음) */
   finalVolPct: number | null
   /** |final - target| (%) — finalVolPct null 이면 null */
   absErrorPct: number | null
-  /** prompt 표시 시각 (epoch ms — wall clock) */
-  promptShownAt: number
-  /** prompt → 첫 볼륨 모드 진입까지 (ms) — gaze 전용, 없으면 null */
+  /** event(볼륨 드롭) 발생 시각 (epoch ms — wall clock) */
+  eventShownAt: number
+  /** [A] event → 조절 완료 (gaze: 볼륨 모드 최종 이탈 / baseline: Space) (ms) */
+  timeToAdjustMs: number | null
+  /** event → 첫 볼륨 모드 진입까지 (ms) — gaze 전용 */
   timeToFirstEntryMs: number | null
-  /** 첫 진입 → 최종 이탈까지 순수 조절 시간 (ms) — gaze 전용 */
-  adjustTimeMs: number | null
-  /** prompt → 완료(최종 이탈 / 완료키) 총 시간 (ms) */
-  totalTimeMs: number | null
   /** 볼륨 모드 진입 횟수 (gaze) */
   numModeEntries: number
-  /** 재몰입 proxy: 완료 → 시선 중앙 영역 안정화까지 (ms). timeout 시 null */
-  reimmersionMs: number | null
-  /** 재몰입 구간 시선 경로 길이 (px) */
-  reimmersionPathPx: number | null
-  /** 재몰입 안정화 성공 여부 */
+  /** [B-1] event → 시선이 중앙(영화)에서 처음 이탈하기까지 (ms) */
+  timeToGazeLeaveMs: number | null
+  /** [B-2] 시선 이탈 → 중앙 복귀·안정화까지 (ms) — "끌려나가 있던 시간" */
+  gazeAwayMs: number | null
+  /** [B-3] event → 중앙 복귀·안정화까지 총 시간 (ms) — 핵심 산출물 */
+  timeToReturnMs: number | null
+  /** 이탈~복귀 구간 시선 경로 길이 (px) */
+  gazePathPx: number
+  /** 중앙 복귀·안정화 성공 여부 (timeout 전 복귀했는지) */
   settled: boolean
 }
 
@@ -73,13 +77,13 @@ export type TestSession = {
   /** 세션 시작 epoch ms */
   startedAt: number
   viewport: { w: number; h: number }
-  /** 재몰입 판정용 중앙 영역 (viewport 비율, 0..1) */
+  /** 중앙(영화) 영역 (viewport 비율, 0..1) — 이탈/복귀 판정용 */
   centralRegionFrac: { x0: number; y0: number; x1: number; y1: number }
   trials: TrialSummary[]
   rawSamples: RawSample[]
 }
 
-/** 중앙 영역(px) — viewport × frac */
+/** 중앙(영화) 영역(px) — viewport × frac */
 export function centralRegionPx(
   viewport: { w: number; h: number },
   frac: { x0: number; y0: number; x1: number; y1: number }
@@ -92,57 +96,91 @@ export function centralRegionPx(
   }
 }
 
-function inRegion(
+export function inRegion(
   gx: number,
   gy: number,
   r: { x0: number; y0: number; x1: number; y1: number }
 ): boolean {
-  return gx >= r.x0 && gx <= r.x1 && gy >= r.y0 && gy <= r.y1
+  return gx >= 0 && gy >= 0 && gx >= r.x0 && gx <= r.x1 && gy >= r.y0 && gy <= r.y1
+}
+
+export type GazeExcursion = {
+  timeToLeaveMs: number | null
+  gazeAwayMs: number | null
+  timeToReturnMs: number | null
+  pathPx: number
+  settled: boolean
 }
 
 /**
- * 재몰입(re-immersion) proxy 계산.
+ * 시선 이탈→복귀 excursion 계산.
  *
- * 입력: 완료 시점(t0) 이후의 reimmersion 단계 raw sample 들 (시간순, 같은 trial).
- * 정의: 시선이 중앙 region 안에 holdMs 동안 *연속* 체류하기 시작하는 첫 시점까지의 경과 시간.
- *       그 구간 동안의 시선 경로 길이도 함께 반환.
- * 미검출(-1) sample 은 체류를 끊는다 (보수적). timeout 이면 settled=false, reimmersionMs=null.
+ * 입력: event(볼륨 드롭) 시점 이후의 mission 단계 raw sample 들 (시간순, 같은 trial).
+ *   - leave : event 후 시선이 중앙 region 밖(또는 미검출)으로 처음 벗어난 시점.
+ *   - return: leave 이후 시선이 중앙 region 안에 holdMs 동안 *연속* 체류하기 시작하는 첫 시점.
+ *   - pathPx: [leave, return] 구간 시선 경로 길이 (복귀 못하면 마지막 sample 까지).
+ * timeout(복귀 전 미션 종료)이면 settled=false, return 계열 null.
  */
-export function computeReimmersion(
+export function computeGazeExcursion(
   samples: RawSample[],
   region: { x0: number; y0: number; x1: number; y1: number },
   holdMs: number
-): { reimmersionMs: number | null; pathPx: number; settled: boolean } {
-  if (samples.length === 0) {
-    return { reimmersionMs: null, pathPx: 0, settled: false }
+): GazeExcursion {
+  const EMPTY: GazeExcursion = {
+    timeToLeaveMs: null,
+    gazeAwayMs: null,
+    timeToReturnMs: null,
+    pathPx: 0,
+    settled: false
   }
+  if (samples.length === 0) return EMPTY
   const t0 = samples[0].t
 
-  // 경로 길이 (전체 reimmersion 구간)
+  // 1) leave — 중앙 밖으로 처음 벗어난 시각
+  let leftAt: number | null = null
+  for (const s of samples) {
+    if (!inRegion(s.gx, s.gy, region)) {
+      leftAt = s.t
+      break
+    }
+  }
+  if (leftAt == null) return EMPTY
+
+  // 2) return — leave 이후 holdMs 연속 체류 시작점
+  let holdStart: number | null = null
+  let returnAt: number | null = null
+  for (const s of samples) {
+    if (s.t < leftAt) continue
+    if (inRegion(s.gx, s.gy, region)) {
+      if (holdStart == null) holdStart = s.t
+      if (s.t - holdStart >= holdMs) {
+        returnAt = holdStart
+        break
+      }
+    } else {
+      holdStart = null
+    }
+  }
+
+  // 3) path — [leave, return(또는 마지막)] 구간
+  const end = returnAt ?? samples[samples.length - 1].t
   let pathPx = 0
   let prev: { x: number; y: number } | null = null
   for (const s of samples) {
+    if (s.t < leftAt || s.t > end) continue
     if (s.gx >= 0 && s.gy >= 0) {
       if (prev) pathPx += Math.hypot(s.gx - prev.x, s.gy - prev.y)
       prev = { x: s.gx, y: s.gy }
     }
   }
 
-  // holdMs 연속 체류 시작점 탐색
-  let holdStart: number | null = null
-  for (const s of samples) {
-    const ok = s.gx >= 0 && s.gy >= 0 && inRegion(s.gx, s.gy, region)
-    if (ok) {
-      if (holdStart == null) holdStart = s.t
-      if (s.t - holdStart >= holdMs) {
-        // holdStart 부터 안정 — 재몰입 완료 시점은 "체류 시작" 으로 본다
-        return { reimmersionMs: holdStart - t0, pathPx, settled: true }
-      }
-    } else {
-      holdStart = null
-    }
+  return {
+    timeToLeaveMs: leftAt - t0,
+    gazeAwayMs: returnAt != null ? returnAt - leftAt : null,
+    timeToReturnMs: returnAt != null ? returnAt - t0 : null,
+    pathPx,
+    settled: returnAt != null
   }
-  return { reimmersionMs: null, pathPx, settled: false }
 }
 
 const BOM = '﻿'
@@ -157,18 +195,18 @@ export function toTrialSummaryCSV(session: TestSession): string {
     'start_vol_pct',
     'final_vol_pct',
     'abs_error_pct',
-    'prompt_shown_at_iso',
+    'event_shown_at_iso',
+    'time_to_adjust_ms',
     'time_to_first_entry_ms',
-    'adjust_time_ms',
-    'total_time_ms',
     'num_mode_entries',
-    'reimmersion_ms',
-    'reimmersion_path_px',
+    'time_to_gaze_leave_ms',
+    'gaze_away_ms',
+    'time_to_return_ms',
+    'gaze_path_px',
     'settled'
   ].join(',')
 
-  const num = (v: number | null, digits = 1): string =>
-    v == null ? '' : v.toFixed(digits)
+  const num = (v: number | null, digits = 1): string => (v == null ? '' : v.toFixed(digits))
 
   const rows: string[] = [header]
   for (const t of session.trials) {
@@ -181,13 +219,14 @@ export function toTrialSummaryCSV(session: TestSession): string {
         num(t.startVolPct, 0),
         num(t.finalVolPct, 0),
         num(t.absErrorPct, 1),
-        new Date(t.promptShownAt).toISOString(),
+        new Date(t.eventShownAt).toISOString(),
+        num(t.timeToAdjustMs, 0),
         num(t.timeToFirstEntryMs, 0),
-        num(t.adjustTimeMs, 0),
-        num(t.totalTimeMs, 0),
         t.numModeEntries,
-        num(t.reimmersionMs, 0),
-        num(t.reimmersionPathPx, 1),
+        num(t.timeToGazeLeaveMs, 0),
+        num(t.gazeAwayMs, 0),
+        num(t.timeToReturnMs, 0),
+        num(t.gazePathPx, 1),
         t.settled ? '1' : '0'
       ].join(',')
     )

@@ -52,6 +52,16 @@
 - 런타임 확인(권장): GazeBar 볼륨 단일 타일 확대 표시 / `⌘⇧T` intro·gaze·baseline 흐름 /
   complete 에서 요약·raw CSV 저장 후 "폴더 열기" 로 Excel 한글 확인 / 자동 복구.
 
+## 추가 (2026-06-09 오후) — running 오버레이 투명화 (실험 치명 버그 수정)
+
+복원된 `TestMode` 의 running 화면이 `Evaluation` 의 풀스크린 모달(`.eval-root.running` =
+`rgba(8,10,14,0.98)`, z-index 8500)을 그대로 썼다. 그러나 GazeBar 는 z-index 7000 이라
+**gaze 조건 trial 중 참가자가 정작 조절해야 할 볼륨 바(와 게임 화면)가 어두운 막에 가려져 보이지
+않는** 문제가 있었다(캘리브식 빈 화면 모달을 그대로 물려받은 것). 볼륨 실험은 게임+GazeBar 를
+보면서 조절해야 하므로 running 레이어를 **투명 + pointer-events:none(통과)** 로 바꿨다. 어두운
+모달은 intro/complete 에서만 유지. `.test-prompt`/`.test-corner` 는 자체 z-index 8500 으로 위에 뜸.
+(`styles.css` `.eval-root.running`)
+
 ## 관련
 - 재적용 출처 커밋: `b94eb2c`, `e590eee` (revert: `4edc337`).
 - 함께 갱신: `docs/ARCHITECTURE.md`(단축키·컴포넌트·OS 브리지), 루트 `CLAUDE.md`(아키텍처 핵심·단축키).

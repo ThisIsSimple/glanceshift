@@ -644,6 +644,12 @@ export function App(): JSX.Element {
           liveVolume={liveSliderValue}
           edgeState={edgeSnapshot.state}
           viewport={viewport}
+          onForceVolume={(v) => {
+            // event 시 볼륨 드롭 — OS + App 저장값 동기화. 저장값을 바꿔두면 이후 engage 시
+            // SliderIntentMapper 가 이 값(0)부터 시작한다 (reset effect 가 sliderValuesRef 를 읽음).
+            window.glanceshift.setVolume(v)
+            setSliderValues((cur) => ({ ...cur, volume: v }))
+          }}
           onDone={() => setTestMode(false)}
         />
       )}

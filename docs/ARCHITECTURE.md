@@ -73,7 +73,7 @@ gaze ──▶ IntentTracker(변별 intent score 누적/감쇠)
 | `intent-score.ts` | `IntentTracker` — 변별 intent score, zone dwell, lateral/approach velocity. `DEFAULT_SNAP_CONFIG` |
 | `edge-detector.ts` | `EdgeDetector` — Rail FSM(idle→building_intent→rail_locked), rail 투영, `EdgeSnapshot` |
 | `slider-mapper.ts` | `SliderIntentMapper` — 조이스틱 rate control. `DEFAULT_SLIDER_CONFIG` |
-| `geometry.ts` | `railThickness(vp)` — GazeBar/rail/EdgeZones 공유 두께 산식 (단일 출처) |
+| `geometry.ts` | `DOCK` 레이아웃 상수 + `gazeBarCenterOffset()` — GazeBar/rail/EdgeZones 공유 (단일 출처). rail 은 독 중심선에 맞춤 |
 | `nic-ec.ts` | iris center / eye corner 정규화 벡터 (캘리브 품질 게이팅용) |
 | `eval-stats.ts` | 평가 통계(mean/std/px→deg) + CSV 직렬화 |
 | `euler.ts` | `HeadPose` 타입만 (행렬→오일러 변환 코드는 제거됨) |
@@ -81,7 +81,8 @@ gaze ──▶ IntentTracker(변별 intent score 누적/감쇠)
 ### 컴포넌트 (`app/src/renderer/src/components/`)
 `App.tsx`(상태 오케스트레이션) · `GazeBar` · `GazeDot`(dwell ring 포함) · `EdgeZones`(디버그 시각화)
 · `DebugHud`(⌘⇧D, 조이스틱 rate/active 행 포함) · `Calibration`(3-phase wizard) · `Evaluation`(gaze/trigger)
-· `TestMode`(⌘⇧T, 볼륨 조절 사용자 실험 + CSV 수집 — `perception/test-session.ts` 의 pure 함수에 위임).
+· `TestMode`(⌘⇧T, 볼륨 조절 사용자 실험 + CSV 수집 — 영화 시청 중 볼륨 0 드롭 → 목표% 복구 →
+  시선 이탈/복귀 측정. `perception/test-session.ts` 의 pure 함수에 위임).
 
 ## 7. 단축키 (전역, `main/index.ts`)
 

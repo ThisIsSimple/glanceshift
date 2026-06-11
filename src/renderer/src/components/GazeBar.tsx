@@ -17,6 +17,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { Edge } from '../perception/edge-detector'
+import { DOCK } from '../perception/geometry'
 
 export type GazeBarItem = {
   id: string
@@ -49,23 +50,7 @@ type Props = {
   lockedItemId?: string | null
 }
 
-/**
- * iPad 독 — 타일/간격/여백 상수 (px). CSS .gazebar 의 padding·gap 과 일치시킬 것.
- *   tile    : 타일의 짧은 변 (cross-axis)
- *   slot    : 항목 하나가 주축에서 차지하는 길이 (= 타일의 긴 변). 키우면 바가 길어짐
- *   gap     : 타일 사이 간격
- *   padding : 독 안쪽 여백
- *   margin  : 화면 가장자리에서 띄우는 거리 (floating)
- */
-const DOCK = {
-  tile: 64,
-  slot: 240,
-  gap: 10,
-  padding: 12,
-  margin: 22
-}
-
-/** 가장자리에서 떠 있는 content-sized 독의 위치·크기 계산 */
+/** 가장자리에서 떠 있는 content-sized 독의 위치·크기 계산 (DOCK 상수는 geometry.ts 단일 출처) */
 function computeGeometry(edge: Edge, viewport: { w: number; h: number }, itemCount: number) {
   const isVertical = edge === 'left' || edge === 'right'
   const { tile, slot, gap, padding, margin } = DOCK
