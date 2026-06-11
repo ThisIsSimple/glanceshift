@@ -66,21 +66,21 @@ export const DEFAULT_SNAP_CONFIG: SnapConfig = {
   //       outer 30% 영역으로 시선이 자주 표류해 의도 없는 lock 이 자주 발생.
   //       18% 면 표류 폭이 같아도 safe zone (중앙 64%) 침범 확률이 크게 감소.
   //       lockZone 은 6% 더 넓혀 hysteresis 보존.
-  intentZoneFrac: 0.12,
-  lockZoneFrac: 0.14,
-  lockZoneFracActive: 0.24,
-  holdZoneDecayMs: 180,
-  intentThreshold: 90,
+  intentZoneFrac: 0.055,
+  lockZoneFrac: 0.09,
+  lockZoneFracActive: 0.12,
+  holdZoneDecayMs: 80,
+  intentThreshold: 140,
   scoreMax: 250,
   decayPerMs: 0.5,
-  dwellBonusAfterMs: 80,
+  dwellBonusAfterMs: 120,
   dwellBonusRate: 0.5,
   lateralVelocityPxs: 500,
-  lateralPenaltyRate: 0,
-  exitGraceMs: 120,
+  lateralPenaltyRate: 0.35,
+  exitGraceMs: 80,
   // B-3 enter 속도 적응 — base intentZoneFrac(0.18) 기준 0.12~0.26 사이 동적.
-  enterFracMin: 0.12,
-  enterFracMax: 0.12,
+  enterFracMin: 0.055,
+  enterFracMax: 0.055,
   enterApproachRefPxs: 600,
   enterLateralRefPxs: 500
 }

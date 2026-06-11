@@ -79,8 +79,8 @@ const RELEASE_GAZE_OUT_MS = 2000
 const EXPERIMENT_EDGE: Edge = 'bottom'
 const SIDEBAR_TARGET_CENTERS = [0.14, 0.5, 0.86] as const
 const SIDEBAR_TARGET_MAJOR_FRAC = 0.16
-const SIDEBAR_TARGET_EDGE_FRAC = 0.16
-const SIDEBAR_TARGET_EDGE_MAX_PX = 150
+const SIDEBAR_TARGET_EDGE_FRAC = 0.11
+const SIDEBAR_TARGET_EDGE_MAX_PX = 120
 
 const RUN_HEADERS: Array<keyof RunRow & string> = [
   'session_id',
