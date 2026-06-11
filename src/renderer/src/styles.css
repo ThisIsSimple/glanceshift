@@ -886,34 +886,11 @@
 }
 
 .pilot-mixer-overlay.glanceshift.edge-bottom {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.pilot-mixer-overlay.glanceshift.edge-bottom::before {
-  content: "";
-  position: absolute;
-  left: -3vw;
-  right: -3vw;
-  bottom: 0;
-  height: min(116px, 12vh);
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
   background: rgba(17, 21, 29, 0.84);
   border-top: 1px solid rgba(255, 255, 255, 0.14);
-  clip-path: polygon(
-    0 40%,
-    12% 26%,
-    26% 10%,
-    40% 17%,
-    50% 34%,
-    60% 17%,
-    74% 10%,
-    88% 26%,
-    100% 40%,
-    100% 100%,
-    0 100%
-  );
-  pointer-events: none;
 }
 
 .pilot-mixer-title {
@@ -1008,7 +985,6 @@
   height: min(76px, calc(100% - 12px));
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
-  clip-path: polygon(10% 0, 90% 0, 100% 100%, 0 100%);
   padding: 10px 12px 8px;
 }
 

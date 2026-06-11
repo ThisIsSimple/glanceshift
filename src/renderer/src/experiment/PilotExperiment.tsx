@@ -78,10 +78,13 @@ const UPRIGHT_MAX_DEG = DEFAULT_SLIDER_CONFIG.uprightMaxDeg
 const RELEASE_GAZE_OUT_MS = 2000
 const EXPERIMENT_EDGE: Edge = 'bottom'
 const SIDEBAR_TARGET_HITBOXES = [
-  { center: 0.14, majorFrac: 0.17, edgeFrac: 0.13, edgeMaxPx: 132 },
+  { center: 0.14, majorFrac: 0.19, edgeFrac: 0.16, edgeMaxPx: 168 },
   { center: 0.5, majorFrac: 0.1, edgeFrac: 0.065, edgeMaxPx: 76 },
-  { center: 0.86, majorFrac: 0.17, edgeFrac: 0.13, edgeMaxPx: 132 }
+  { center: 0.86, majorFrac: 0.19, edgeFrac: 0.16, edgeMaxPx: 168 }
 ] as const
+const SIDEBAR_BASE_EDGE_MAX_PX = 72
+const SIDEBAR_SIDE_EDGE_MAX_PX = 168
+const SIDEBAR_SIDE_ACCESS_WIDTH_FRAC = 0.28
 
 const RUN_HEADERS: Array<keyof RunRow & string> = [
   'session_id',
@@ -1004,7 +1007,8 @@ export function PilotExperiment({
     if (!current) return
 
     const inExperimentEdge =
-      edgeSnapshot.state === 'entered' && edgeSnapshot.edge === EXPERIMENT_EDGE
+      (edgeSnapshot.state === 'entered' && edgeSnapshot.edge === EXPERIMENT_EDGE) ||
+      isInPilotSidebarZone(EXPERIMENT_EDGE, gazePoint, viewport)
 
     if (inExperimentEdge) {
       const trial = activeTrial()
@@ -1287,6 +1291,25 @@ function round3(value: number): number {
 function roundOrBlank(value: number | '' | null): number | '' {
   if (value === '' || value == null) return ''
   return Math.round(value)
+}
+
+function isInPilotSidebarZone(
+  edge: Edge,
+  gaze: { x: number; y: number } | null,
+  viewport: { w: number; h: number }
+): boolean {
+  if (!gaze || gaze.x < 0 || gaze.y < 0) return false
+  if (edge !== 'bottom') return false
+
+  const relX = gaze.x / Math.max(1, viewport.w)
+  const leftAccess = Math.max(0, 1 - Math.abs(relX - 0.14) / SIDEBAR_SIDE_ACCESS_WIDTH_FRAC)
+  const rightAccess = Math.max(0, 1 - Math.abs(relX - 0.86) / SIDEBAR_SIDE_ACCESS_WIDTH_FRAC)
+  const sideAccess = Math.max(leftAccess, rightAccess)
+  const edgeLimitPx =
+    SIDEBAR_BASE_EDGE_MAX_PX +
+    (SIDEBAR_SIDE_EDGE_MAX_PX - SIDEBAR_BASE_EDGE_MAX_PX) * sideAccess
+
+  return viewport.h - gaze.y <= edgeLimitPx
 }
 
 function targetFromGaze(
