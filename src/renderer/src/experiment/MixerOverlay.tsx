@@ -65,10 +65,11 @@ export function MixerOverlay({
               ].join(' ')}
             >
               {isBaseline && <div className="pilot-mixer-key">{index + 1}</div>}
-              <div className="pilot-mixer-label">{targetLabel(target)}</div>
               <div className="pilot-mixer-meter">
                 <div style={{ width: `${volumes[target] * 100}%` }} />
               </div>
+              <div className="pilot-mixer-label">{targetLabel(target)}</div>
+              {isSelected && <div className="pilot-mixer-selected-mark">ACTIVE</div>}
             </div>
           )
         })}

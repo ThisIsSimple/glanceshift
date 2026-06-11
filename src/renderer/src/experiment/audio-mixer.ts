@@ -1,4 +1,8 @@
+import gameTrackUrl from '../assets/audio/ncone-bgm-blues-guitar-loop-192099.mp3?url'
+import voiceTrackUrl from '../assets/audio/freesound_community-people-talking-in-small-room-6064.mp3?url'
 import type { CommandTarget, MixerVolumes } from './pilot-types'
+
+const CHANNEL_GAIN = 0.5
 
 export class ExperimentAudioMixer {
   private ctx: AudioContext | null = null
@@ -28,40 +32,27 @@ export class ExperimentAudioMixer {
     this.masterGain = master
     this.gameGain = game
     this.voiceGain = voice
-
-    const gameOsc = ctx.createOscillator()
-    gameOsc.type = 'sawtooth'
-    gameOsc.frequency.value = 164
-    const gameFilter = ctx.createBiquadFilter()
-    gameFilter.type = 'lowpass'
-    gameFilter.frequency.value = 620
-    gameOsc.connect(gameFilter)
-    gameFilter.connect(game)
-    gameOsc.start()
-
-    const voiceOsc = ctx.createOscillator()
-    voiceOsc.type = 'triangle'
-    voiceOsc.frequency.value = 410
-    const voiceLfo = ctx.createOscillator()
-    const voiceLfoGain = ctx.createGain()
-    voiceLfo.frequency.value = 5.2
-    voiceLfoGain.gain.value = 42
-    voiceLfo.connect(voiceLfoGain)
-    voiceLfoGain.connect(voiceOsc.frequency)
-    voiceOsc.connect(voice)
-    voiceOsc.start()
-    voiceLfo.start()
-
-    this.nodes = [gameOsc, gameFilter, voiceOsc, voiceLfo, voiceLfoGain, game, voice, master]
     this.setVolumes(volumes)
+
+    const [gameBuffer, voiceBuffer] = await Promise.all([
+      loadAudioBuffer(ctx, gameTrackUrl),
+      loadAudioBuffer(ctx, voiceTrackUrl)
+    ])
+
+    const gameSource = createLoopSource(ctx, gameBuffer, game)
+    const voiceSource = createLoopSource(ctx, voiceBuffer, voice)
+    gameSource.start()
+    voiceSource.start()
+
+    this.nodes = [gameSource, voiceSource, game, voice, master]
     await ctx.resume()
   }
 
   setVolumes(volumes: MixerVolumes): void {
     if (!this.ctx) return
     const now = this.ctx.currentTime
-    this.gameGain?.gain.setTargetAtTime(volumes.game * 0.22, now, 0.02)
-    this.voiceGain?.gain.setTargetAtTime(volumes.voice * 0.18, now, 0.02)
+    this.gameGain?.gain.setTargetAtTime(volumes.game * CHANNEL_GAIN, now, 0.02)
+    this.voiceGain?.gain.setTargetAtTime(volumes.voice * CHANNEL_GAIN, now, 0.02)
     this.masterGain?.gain.setTargetAtTime(volumes.master, now, 0.02)
   }
 
@@ -111,6 +102,25 @@ export class ExperimentAudioMixer {
     this.masterGain = null
     await ctx.close()
   }
+}
+
+async function loadAudioBuffer(ctx: AudioContext, url: string): Promise<AudioBuffer> {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Failed to load audio asset: ${url}`)
+  const data = await response.arrayBuffer()
+  return ctx.decodeAudioData(data)
+}
+
+function createLoopSource(
+  ctx: AudioContext,
+  buffer: AudioBuffer,
+  destination: AudioNode
+): AudioBufferSourceNode {
+  const source = ctx.createBufferSource()
+  source.buffer = buffer
+  source.loop = true
+  source.connect(destination)
+  return source
 }
 
 declare global {

@@ -546,6 +546,97 @@
   word-break: break-all;
 }
 
+.pilot-lobby {
+  display: grid;
+  gap: 18px;
+}
+
+.pilot-lobby-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.pilot-lobby-header h2 {
+  margin-bottom: 6px;
+}
+
+.pilot-lobby-header p {
+  margin: 0;
+}
+
+.pilot-audio-state {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.pilot-audio-state.ready {
+  border-color: rgba(114, 219, 143, 0.44);
+  background: rgba(114, 219, 143, 0.12);
+  color: #b9f4c9;
+}
+
+.pilot-lobby-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+}
+
+.pilot-lobby-grid .pilot-field {
+  margin-bottom: 0;
+}
+
+.pilot-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pilot-mode-card {
+  min-height: 108px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--gs-text);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.pilot-mode-card.primary {
+  border-color: rgba(90, 169, 255, 0.5);
+  background: rgba(90, 169, 255, 0.14);
+}
+
+.pilot-mode-card span {
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.pilot-mode-card small {
+  color: var(--gs-text-dim);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pilot-mode-card:hover {
+  border-color: rgba(90, 169, 255, 0.72);
+  background: rgba(90, 169, 255, 0.16);
+}
+
 .pilot-runner {
   position: absolute;
   inset: 0;
@@ -600,6 +691,7 @@
   min-width: 360px;
   height: min(760px, 76vh);
   min-height: 540px;
+  transform: translateY(clamp(-96px, -7vh, -64px));
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   background:
@@ -717,6 +809,44 @@
   font-size: 12px;
 }
 
+.pilot-selected-target {
+  position: absolute;
+  right: 24px;
+  top: 78px;
+  min-width: 156px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(12, 15, 22, 0.78);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+}
+
+.pilot-selected-target span {
+  display: block;
+  color: var(--gs-text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.pilot-selected-target strong {
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 17px;
+  line-height: 1.15;
+}
+
+.pilot-selected-target.active {
+  border-color: rgba(90, 169, 255, 0.82);
+  background: rgba(24, 68, 118, 0.72);
+  box-shadow: 0 0 0 3px rgba(90, 169, 255, 0.16), 0 14px 38px rgba(0, 0, 0, 0.32);
+}
+
+.pilot-selected-target.empty strong {
+  color: rgba(255, 255, 255, 0.5);
+}
+
 .pilot-practice-tag {
   position: absolute;
   right: 24px;
@@ -778,10 +908,11 @@
   bottom: 0;
   left: 0;
   right: 0;
+  overflow: visible;
 }
 
 .pilot-mixer-overlay.glanceshift {
-  width: min(230px, 18vw);
+  width: min(184px, 14vw);
   padding: 0;
   border-radius: 0;
   background: rgba(17, 21, 29, 0.82);
@@ -790,7 +921,15 @@
 .pilot-mixer-overlay.glanceshift.edge-top,
 .pilot-mixer-overlay.glanceshift.edge-bottom {
   width: auto;
-  height: min(180px, 20vh);
+  height: min(122px, 13vh);
+}
+
+.pilot-mixer-overlay.glanceshift.edge-bottom {
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: rgba(17, 21, 29, 0.84);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
 }
 
 .pilot-mixer-title {
@@ -867,6 +1006,57 @@
   border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.pilot-mixer-overlay.glanceshift.edge-top .pilot-mixer-targets,
+.pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-targets {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 8px clamp(48px, 7vw, 132px);
+  box-sizing: border-box;
+  grid-template-columns: none;
+  position: relative;
+  z-index: 1;
+}
+
+.pilot-mixer-overlay.glanceshift.edge-top .pilot-mixer-target,
+.pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-target {
+  flex: 0 0 clamp(112px, 15vw, 276px);
+  height: min(76px, calc(100% - 12px));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 10px 12px 8px;
+}
+
+.pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-target:nth-child(1),
+.pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-target:nth-child(3) {
+  transform: translateY(8px);
+}
+
+.pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-target:nth-child(2) {
+  flex-basis: clamp(92px, 10vw, 190px);
+  height: min(66px, calc(100% - 18px));
+  transform: translateY(8px);
+}
+
+.pilot-mixer-overlay.glanceshift.edge-left .pilot-mixer-targets,
+.pilot-mixer-overlay.glanceshift.edge-right .pilot-mixer-targets {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: clamp(34px, 6vh, 92px) 8px;
+  box-sizing: border-box;
+  grid-template-rows: none;
+}
+
+.pilot-mixer-overlay.glanceshift.edge-left .pilot-mixer-target,
+.pilot-mixer-overlay.glanceshift.edge-right .pilot-mixer-target {
+  flex: 0 0 clamp(82px, 12vh, 132px);
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 10px;
+}
+
 .pilot-mixer-target.prompt-target {
   border-color: rgba(114, 219, 143, 0.38);
 }
@@ -877,14 +1067,33 @@
   background: rgba(90, 169, 255, 0.16);
 }
 
+.pilot-mixer-target.selected {
+  box-shadow: inset 0 0 0 2px rgba(90, 169, 255, 0.36);
+}
+
+.pilot-mixer-selected-mark {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(90, 169, 255, 0.9);
+  color: #07111f;
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1;
+}
+
 .pilot-mixer-label {
-  margin-bottom: 8px;
+  margin-top: 8px;
   font-size: 13px;
   font-weight: 650;
 }
 
 .pilot-mixer-overlay.glanceshift .pilot-mixer-label {
-  font-size: 18px;
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.1;
 }
 
 .pilot-mixer-key {

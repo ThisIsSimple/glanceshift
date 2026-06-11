@@ -51,7 +51,7 @@ type Props = {
   gazePoint: { x: number; y: number; t: number } | null
   head: HeadSample
   edgeSnapshot: EdgeSnapshot
-  onDone: () => void
+  entrySignal: number
 }
 
 type RuntimeTrial = {
@@ -77,6 +77,14 @@ type RuntimeTrial = {
 const UPRIGHT_MAX_DEG = DEFAULT_SLIDER_CONFIG.uprightMaxDeg
 const RELEASE_GAZE_OUT_MS = 2000
 const EXPERIMENT_EDGE: Edge = 'bottom'
+const SIDEBAR_TARGET_HITBOXES = [
+  { center: 0.14, majorFrac: 0.19, edgeFrac: 0.16, edgeMaxPx: 168 },
+  { center: 0.5, majorFrac: 0.1, edgeFrac: 0.065, edgeMaxPx: 76 },
+  { center: 0.86, majorFrac: 0.19, edgeFrac: 0.16, edgeMaxPx: 168 }
+] as const
+const SIDEBAR_BASE_EDGE_MAX_PX = 72
+const SIDEBAR_SIDE_EDGE_MAX_PX = 168
+const SIDEBAR_SIDE_ACCESS_WIDTH_FRAC = 0.28
 
 const RUN_HEADERS: Array<keyof RunRow & string> = [
   'session_id',
@@ -166,9 +174,9 @@ export function PilotExperiment({
   gazePoint,
   head,
   edgeSnapshot,
-  onDone
+  entrySignal
 }: Props): JSX.Element {
-  const [phase, setPhase] = useState<PilotPhase>('setup')
+  const [phase, setPhase] = useState<PilotPhase>('lobby')
   const [participantId, setParticipantId] = useState('P01')
   const [audioReady, setAudioReady] = useState(false)
   const [conditionIndex, setConditionIndex] = useState(0)
@@ -210,6 +218,7 @@ export function PilotExperiment({
   const conditionRef = useRef<PilotCondition>(condition)
   const phaseRef = useRef<PilotPhase>(phase)
   const isPracticeRef = useRef(false)
+  const runFlowRef = useRef<'pilot' | 'try'>('pilot')
   const runStartedWallAtRef = useRef(0)
   const runIdxRef = useRef(0)
   const conditionIndexRef = useRef(0)
@@ -276,6 +285,11 @@ export function PilotExperiment({
   useEffect(() => {
     phaseRef.current = phase
   }, [phase])
+
+  useEffect(() => {
+    if (phaseRef.current === 'practice' || phaseRef.current === 'run') return
+    setPhase('lobby')
+  }, [entrySignal])
 
   const isGazeInPlayArea = useCallback(
     (g: { x: number; y: number } | null): boolean => {
@@ -346,6 +360,29 @@ export function PilotExperiment({
       edgeEnterAtMs: null,
       returnedToPlayAreaAtMs: null
     })
+  }
+
+  const resetPilotSession = (): void => {
+    sessionIdRef.current = `pilot-${Date.now()}`
+    runIdxRef.current = 0
+    conditionIndexRef.current = 0
+    setConditionIndex(0)
+    setCondition(PILOT_CONDITION_ORDER[0])
+    conditionRef.current = PILOT_CONDITION_ORDER[0]
+    runRowsRef.current = []
+    trialRowsRef.current = []
+    eventRowsRef.current = []
+    frameRowsRef.current = []
+    trialsRef.current = []
+    setSavedPaths([])
+    setSnapshot(null)
+    setUpcoming(createPilotObstacles())
+    setRecentCollision(null)
+    setLane(1)
+    laneRef.current = 1
+    volumesRef.current = { ...PILOT_INITIAL_VOLUMES }
+    setVolumes({ ...PILOT_INITIAL_VOLUMES })
+    resetCommandUi()
   }
 
   const commandSucceeded = (trial: RuntimeTrial): boolean => {
@@ -568,8 +605,14 @@ export function PilotExperiment({
       simRef.current = null
       setSnapshot(snap)
       setUpcoming([])
+      await mixerRef.current.stop()
+      setAudioReady(false)
 
       if (isPracticeRef.current) {
+        if (runFlowRef.current === 'try') {
+          setPhase('lobby')
+          return
+        }
         setPhase('condition-break')
         return
       }
@@ -733,12 +776,9 @@ export function PilotExperiment({
     const runStartVolumes = { ...PILOT_INITIAL_VOLUMES }
     volumesRef.current = runStartVolumes
     setVolumes(runStartVolumes)
-    if (!audioReady) {
-      await mixerRef.current.start(runStartVolumes)
-      setAudioReady(true)
-    } else {
-      mixerRef.current.setVolumes(runStartVolumes)
-    }
+    await mixerRef.current.stop()
+    await mixerRef.current.start(runStartVolumes)
+    setAudioReady(true)
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
     setCondition(nextCondition)
     conditionRef.current = nextCondition
@@ -772,12 +812,23 @@ export function PilotExperiment({
     rafRef.current = requestAnimationFrame(tick)
   }
 
-  const startNextPractice = async (): Promise<void> => {
-    await startRun(PILOT_CONDITION_ORDER[conditionIndexRef.current], true)
-  }
-
   const startCurrentRun = async (): Promise<void> => {
     await startRun(PILOT_CONDITION_ORDER[conditionIndexRef.current], false)
+  }
+
+  const startPilotFlow = async (): Promise<void> => {
+    resetPilotSession()
+    runFlowRef.current = 'pilot'
+    await startRun(PILOT_CONDITION_ORDER[0], false)
+  }
+
+  const startTryMode = async (nextCondition: PilotCondition): Promise<void> => {
+    resetPilotSession()
+    runFlowRef.current = 'try'
+    const conditionIdx = PILOT_CONDITION_ORDER.indexOf(nextCondition)
+    conditionIndexRef.current = Math.max(0, conditionIdx)
+    setConditionIndex(conditionIndexRef.current)
+    await startRun(nextCondition, true)
   }
 
   const advanceAfterBreak = async (): Promise<void> => {
@@ -790,7 +841,7 @@ export function PilotExperiment({
       setConditionIndex(next)
       conditionIndexRef.current = next
       setCondition(PILOT_CONDITION_ORDER[next])
-      await startRun(PILOT_CONDITION_ORDER[next], true)
+      await startRun(PILOT_CONDITION_ORDER[next], false)
     }
   }
 
@@ -956,7 +1007,8 @@ export function PilotExperiment({
     if (!current) return
 
     const inExperimentEdge =
-      edgeSnapshot.state === 'entered' && edgeSnapshot.edge === EXPERIMENT_EDGE
+      (edgeSnapshot.state === 'entered' && edgeSnapshot.edge === EXPERIMENT_EDGE) ||
+      isInPilotSidebarZone(EXPERIMENT_EDGE, gazePoint, viewport)
 
     if (inExperimentEdge) {
       const trial = activeTrial()
@@ -996,9 +1048,7 @@ export function PilotExperiment({
       if (trial.targetSelectedAtMs == null) trial.targetSelectedAtMs = current.elapsedMs
     }
     setGlance((prev) => ({ ...prev, returnedToPlayAreaAtMs: current.elapsedMs }))
-    if (selectedTargetRef.current !== target) {
-      selectTarget(target, 'auto')
-    }
+    selectTarget(target, 'auto')
   }, [
     activeTrial,
     condition,
@@ -1080,33 +1130,65 @@ export function PilotExperiment({
     return `${targetLabel(activePrompt.target)} ${directionLabel(activePrompt.direction)}`
   }, [activePrompt])
 
-  if (phase === 'setup') {
+  if (phase === 'lobby') {
     return (
       <div className="pilot-root">
-        <div className="pilot-panel">
-          <h2>파일럿 사용자 실험</h2>
-          <div className="pilot-field">
-            <label>participant id</label>
-            <input value={participantId} onChange={(e) => setParticipantId(e.target.value)} />
+        <div className="pilot-panel pilot-panel-wide pilot-lobby">
+          <div className="pilot-lobby-header">
+            <div>
+              <h2>GlanceShift Pilot</h2>
+              <p>Choose a run mode.</p>
+            </div>
+            <div className={`pilot-audio-state ${audioReady ? 'ready' : ''}`}>
+              {audioReady ? 'audio ready' : 'audio idle'}
+            </div>
           </div>
-          <div className="pilot-actions">
+
+          <div className="pilot-lobby-grid">
+            <div className="pilot-field">
+              <label>participant id</label>
+              <input value={participantId} onChange={(e) => setParticipantId(e.target.value)} />
+            </div>
+            <div className="pilot-actions">
+              <button
+                type="button"
+                onClick={async () => {
+                  await mixerRef.current.start(volumesRef.current)
+                  setAudioReady(true)
+                }}
+              >
+                Prepare audio
+              </button>
+              {savedPaths.length > 0 && (
+                <button type="button" onClick={() => void window.glanceshift.revealEvalFolder()}>
+                  Open logs
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="pilot-mode-grid">
+            <button type="button" className="pilot-mode-card primary" onClick={startPilotFlow}>
+              <span>Full pilot</span>
+              <small>Keyboard condition, then GlanceShift condition</small>
+            </button>
             <button
               type="button"
-              onClick={async () => {
-                await mixerRef.current.start(volumesRef.current)
-                setAudioReady(true)
-              }}
+              className="pilot-mode-card"
+              onClick={() => void startTryMode('mouse-menu')}
             >
-              오디오 준비
+              <span>Keyboard practice</span>
+              <small>Same mixer UI with keyboard controls</small>
             </button>
-            <button type="button" className="primary" onClick={startNextPractice}>
-              시작
+            <button
+              type="button"
+              className="pilot-mode-card"
+              onClick={() => void startTryMode('glanceshift')}
+            >
+              <span>GlanceShift practice</span>
+              <small>Bottom edge target boxes with head tilt control</small>
             </button>
           </div>
-          <p>
-            순서: mouse-menu practice/run 이후 GlanceShift practice/run. 설문은 조건 종료 후
-            별도로 진행합니다.
-          </p>
         </div>
       </div>
     )
@@ -1157,8 +1239,8 @@ export function PilotExperiment({
             <button type="button" onClick={() => void window.glanceshift.revealEvalFolder()}>
               로그 폴더 열기
             </button>
-            <button type="button" className="primary" onClick={onDone}>
-              닫기
+            <button type="button" className="primary" onClick={() => setPhase('lobby')}>
+              Back to lobby
             </button>
           </div>
         </div>
@@ -1187,6 +1269,10 @@ export function PilotExperiment({
         selectedTarget={selectedTarget}
         menuOpen={menuOpen}
       />
+      <div className={`pilot-selected-target ${selectedTarget ? 'active' : 'empty'}`}>
+        <span>Selected</span>
+        <strong>{selectedTarget ? targetLabel(selectedTarget) : 'None'}</strong>
+      </div>
       {activePrompt && (
         <div className="pilot-command-status">
           {currentPromptText} · {selectedTarget ? `${targetLabel(selectedTarget)} 선택됨` : 'target 선택 중'}
@@ -1205,6 +1291,25 @@ function roundOrBlank(value: number | '' | null): number | '' {
   return Math.round(value)
 }
 
+function isInPilotSidebarZone(
+  edge: Edge,
+  gaze: { x: number; y: number } | null,
+  viewport: { w: number; h: number }
+): boolean {
+  if (!gaze || gaze.x < 0 || gaze.y < 0) return false
+  if (edge !== 'bottom') return false
+
+  const relX = gaze.x / Math.max(1, viewport.w)
+  const leftAccess = Math.max(0, 1 - Math.abs(relX - 0.14) / SIDEBAR_SIDE_ACCESS_WIDTH_FRAC)
+  const rightAccess = Math.max(0, 1 - Math.abs(relX - 0.86) / SIDEBAR_SIDE_ACCESS_WIDTH_FRAC)
+  const sideAccess = Math.max(leftAccess, rightAccess)
+  const edgeLimitPx =
+    SIDEBAR_BASE_EDGE_MAX_PX +
+    (SIDEBAR_SIDE_EDGE_MAX_PX - SIDEBAR_BASE_EDGE_MAX_PX) * sideAccess
+
+  return viewport.h - gaze.y <= edgeLimitPx
+}
+
 function targetFromGaze(
   edge: Edge,
   gaze: { x: number; y: number } | null,
@@ -1214,8 +1319,23 @@ function targetFromGaze(
   const isVertical = edge === 'left' || edge === 'right'
   const major = isVertical ? gaze.y : gaze.x
   const length = isVertical ? viewport.h : viewport.w
-  const rel = major / length
-  if (rel < 0 || rel > 1) return null
-  const idx = Math.max(0, Math.min(PILOT_TARGETS.length - 1, Math.floor(rel * PILOT_TARGETS.length)))
+  const edgeDistance =
+    edge === 'left'
+      ? gaze.x
+      : edge === 'right'
+        ? viewport.w - gaze.x
+        : edge === 'top'
+          ? gaze.y
+          : viewport.h - gaze.y
+  const idx = SIDEBAR_TARGET_HITBOXES.findIndex(
+    (box) => Math.abs(major - box.center * length) <= (length * box.majorFrac) / 2
+  )
+  if (idx < 0) return null
+
+  const box = SIDEBAR_TARGET_HITBOXES[idx]
+  const crossLength = isVertical ? viewport.w : viewport.h
+  const edgeLimitPx = Math.min(box.edgeMaxPx, crossLength * box.edgeFrac)
+  if (edgeDistance < 0 || edgeDistance > edgeLimitPx) return null
+
   return PILOT_TARGETS[idx]
 }

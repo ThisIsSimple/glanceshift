@@ -6,7 +6,7 @@ export type CommandDirection = 'up' | 'down'
 export type RunnerLane = 0 | 1 | 2
 
 export type PilotPhase =
-  | 'setup'
+  | 'lobby'
   | 'practice'
   | 'run'
   | 'condition-break'

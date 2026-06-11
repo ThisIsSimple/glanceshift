@@ -90,6 +90,7 @@ export function App(): JSX.Element {
 
   const [evaluating, setEvaluating] = useState(false)
   const [pilotExperiment, setPilotExperiment] = useState(true)
+  const [pilotEntrySignal, setPilotEntrySignal] = useState(0)
 
   // Edge detector — IntentTracker + Rail FSM (snapping).
   const edgeDetectorRef = useRef(new EdgeDetector(DEFAULT_SNAP_CONFIG))
@@ -185,7 +186,10 @@ export function App(): JSX.Element {
   useEffect(() => {
     const offDebug = window.glanceshift.onToggleDebug(() => setDebugVisible((v) => !v))
     const offCt = window.glanceshift.onClickThroughChange((enabled) => setClickThrough(enabled))
-    const offEval = window.glanceshift.onToggleEvaluation(() => setPilotExperiment((v) => !v))
+    const offEval = window.glanceshift.onToggleEvaluation(() => {
+      setPilotExperiment(true)
+      setPilotEntrySignal((v) => v + 1)
+    })
 
     return () => {
       offDebug()
@@ -591,7 +595,7 @@ export function App(): JSX.Element {
           gazePoint={usingGaze ? { x: gaze.x, y: gaze.y, t: gaze.t } : null}
           head={head}
           edgeSnapshot={edgeSnapshot}
-          onDone={() => setPilotExperiment(false)}
+          entrySignal={pilotEntrySignal}
         />
       )}
     </>
