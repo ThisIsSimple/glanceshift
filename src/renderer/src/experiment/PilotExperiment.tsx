@@ -51,7 +51,7 @@ type Props = {
   gazePoint: { x: number; y: number; t: number } | null
   head: HeadSample
   edgeSnapshot: EdgeSnapshot
-  onDone: () => void
+  entrySignal: number
 }
 
 type RuntimeTrial = {
@@ -170,9 +170,9 @@ export function PilotExperiment({
   gazePoint,
   head,
   edgeSnapshot,
-  onDone
+  entrySignal
 }: Props): JSX.Element {
-  const [phase, setPhase] = useState<PilotPhase>('setup')
+  const [phase, setPhase] = useState<PilotPhase>('lobby')
   const [participantId, setParticipantId] = useState('P01')
   const [audioReady, setAudioReady] = useState(false)
   const [conditionIndex, setConditionIndex] = useState(0)
@@ -214,6 +214,7 @@ export function PilotExperiment({
   const conditionRef = useRef<PilotCondition>(condition)
   const phaseRef = useRef<PilotPhase>(phase)
   const isPracticeRef = useRef(false)
+  const runFlowRef = useRef<'pilot' | 'try'>('pilot')
   const runStartedWallAtRef = useRef(0)
   const runIdxRef = useRef(0)
   const conditionIndexRef = useRef(0)
@@ -280,6 +281,11 @@ export function PilotExperiment({
   useEffect(() => {
     phaseRef.current = phase
   }, [phase])
+
+  useEffect(() => {
+    if (phaseRef.current === 'practice' || phaseRef.current === 'run') return
+    setPhase('lobby')
+  }, [entrySignal])
 
   const isGazeInPlayArea = useCallback(
     (g: { x: number; y: number } | null): boolean => {
@@ -350,6 +356,29 @@ export function PilotExperiment({
       edgeEnterAtMs: null,
       returnedToPlayAreaAtMs: null
     })
+  }
+
+  const resetPilotSession = (): void => {
+    sessionIdRef.current = `pilot-${Date.now()}`
+    runIdxRef.current = 0
+    conditionIndexRef.current = 0
+    setConditionIndex(0)
+    setCondition(PILOT_CONDITION_ORDER[0])
+    conditionRef.current = PILOT_CONDITION_ORDER[0]
+    runRowsRef.current = []
+    trialRowsRef.current = []
+    eventRowsRef.current = []
+    frameRowsRef.current = []
+    trialsRef.current = []
+    setSavedPaths([])
+    setSnapshot(null)
+    setUpcoming(createPilotObstacles())
+    setRecentCollision(null)
+    setLane(1)
+    laneRef.current = 1
+    volumesRef.current = { ...PILOT_INITIAL_VOLUMES }
+    setVolumes({ ...PILOT_INITIAL_VOLUMES })
+    resetCommandUi()
   }
 
   const commandSucceeded = (trial: RuntimeTrial): boolean => {
@@ -574,6 +603,10 @@ export function PilotExperiment({
       setUpcoming([])
 
       if (isPracticeRef.current) {
+        if (runFlowRef.current === 'try') {
+          setPhase('lobby')
+          return
+        }
         setPhase('condition-break')
         return
       }
@@ -776,12 +809,23 @@ export function PilotExperiment({
     rafRef.current = requestAnimationFrame(tick)
   }
 
-  const startNextPractice = async (): Promise<void> => {
-    await startRun(PILOT_CONDITION_ORDER[conditionIndexRef.current], true)
-  }
-
   const startCurrentRun = async (): Promise<void> => {
     await startRun(PILOT_CONDITION_ORDER[conditionIndexRef.current], false)
+  }
+
+  const startPilotFlow = async (): Promise<void> => {
+    resetPilotSession()
+    runFlowRef.current = 'pilot'
+    await startRun(PILOT_CONDITION_ORDER[0], true)
+  }
+
+  const startTryMode = async (nextCondition: PilotCondition): Promise<void> => {
+    resetPilotSession()
+    runFlowRef.current = 'try'
+    const conditionIdx = PILOT_CONDITION_ORDER.indexOf(nextCondition)
+    conditionIndexRef.current = Math.max(0, conditionIdx)
+    setConditionIndex(conditionIndexRef.current)
+    await startRun(nextCondition, true)
   }
 
   const advanceAfterBreak = async (): Promise<void> => {
@@ -1088,33 +1132,65 @@ export function PilotExperiment({
     return `${targetLabel(activePrompt.target)} ${directionLabel(activePrompt.direction)}`
   }, [activePrompt])
 
-  if (phase === 'setup') {
+  if (phase === 'lobby') {
     return (
       <div className="pilot-root">
-        <div className="pilot-panel">
-          <h2>파일럿 사용자 실험</h2>
-          <div className="pilot-field">
-            <label>participant id</label>
-            <input value={participantId} onChange={(e) => setParticipantId(e.target.value)} />
+        <div className="pilot-panel pilot-panel-wide pilot-lobby">
+          <div className="pilot-lobby-header">
+            <div>
+              <h2>GlanceShift Pilot</h2>
+              <p>Choose a run mode.</p>
+            </div>
+            <div className={`pilot-audio-state ${audioReady ? 'ready' : ''}`}>
+              {audioReady ? 'audio ready' : 'audio idle'}
+            </div>
           </div>
-          <div className="pilot-actions">
+
+          <div className="pilot-lobby-grid">
+            <div className="pilot-field">
+              <label>participant id</label>
+              <input value={participantId} onChange={(e) => setParticipantId(e.target.value)} />
+            </div>
+            <div className="pilot-actions">
+              <button
+                type="button"
+                onClick={async () => {
+                  await mixerRef.current.start(volumesRef.current)
+                  setAudioReady(true)
+                }}
+              >
+                Prepare audio
+              </button>
+              {savedPaths.length > 0 && (
+                <button type="button" onClick={() => void window.glanceshift.revealEvalFolder()}>
+                  Open logs
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="pilot-mode-grid">
+            <button type="button" className="pilot-mode-card primary" onClick={startPilotFlow}>
+              <span>Full pilot</span>
+              <small>Keyboard condition, then GlanceShift condition</small>
+            </button>
             <button
               type="button"
-              onClick={async () => {
-                await mixerRef.current.start(volumesRef.current)
-                setAudioReady(true)
-              }}
+              className="pilot-mode-card"
+              onClick={() => void startTryMode('mouse-menu')}
             >
-              오디오 준비
+              <span>Keyboard practice</span>
+              <small>Same mixer UI with keyboard controls</small>
             </button>
-            <button type="button" className="primary" onClick={startNextPractice}>
-              시작
+            <button
+              type="button"
+              className="pilot-mode-card"
+              onClick={() => void startTryMode('glanceshift')}
+            >
+              <span>GlanceShift practice</span>
+              <small>Bottom edge target boxes with head tilt control</small>
             </button>
           </div>
-          <p>
-            순서: mouse-menu practice/run 이후 GlanceShift practice/run. 설문은 조건 종료 후
-            별도로 진행합니다.
-          </p>
         </div>
       </div>
     )
@@ -1165,8 +1241,8 @@ export function PilotExperiment({
             <button type="button" onClick={() => void window.glanceshift.revealEvalFolder()}>
               로그 폴더 열기
             </button>
-            <button type="button" className="primary" onClick={onDone}>
-              닫기
+            <button type="button" className="primary" onClick={() => setPhase('lobby')}>
+              Back to lobby
             </button>
           </div>
         </div>
