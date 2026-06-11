@@ -19,7 +19,7 @@ export const PILOT_RUN_TIMEOUT_MS = 90_000
 export const PILOT_ANALYSIS_WINDOW_MS = 5_000
 export const PILOT_FRAME_SAMPLE_MS = 100
 
-export const PILOT_OBSTACLE_SEED = 'pilot-obstacles-v5'
+export const PILOT_OBSTACLE_SEED = 'pilot-obstacles-v6'
 export const PILOT_PROMPT_SEED = 'pilot-prompts-v1'
 
 export const PILOT_BASE_SPEED = 300
@@ -86,16 +86,17 @@ const OBSTACLE_TIMES: Array<[number, RunnerLane]> = [
 ]
 
 export function createPilotObstacles(): ObstacleSpec[] {
-  const doubled = OBSTACLE_TIMES.flatMap(([timeSec, lane], idx): Array<[number, RunnerLane]> => {
-    const extraTimeSec = Math.min(PILOT_RUN_DURATION_MS / 1000 - 0.6, timeSec + 0.72)
-    const extraLane = ((lane + (idx % 2 === 0 ? 1 : 2)) % 3) as RunnerLane
-    return [
-      [timeSec, lane],
-      [extraTimeSec, extraLane]
-    ]
-  }).sort((a, b) => a[0] - b[0])
+  const offsetsSec = [0, 0.36, 0.72, 1.08]
+  const expanded = OBSTACLE_TIMES.flatMap(([timeSec, lane], idx): Array<[number, RunnerLane]> =>
+    offsetsSec.map((offsetSec, offsetIdx) => {
+      const nextTimeSec = Math.min(PILOT_RUN_DURATION_MS / 1000 - 0.6, timeSec + offsetSec)
+      const laneStep =
+        offsetIdx === 0 ? 0 : ((offsetIdx + idx) % 2 === 0 ? offsetIdx : 3 - offsetIdx)
+      return [nextTimeSec, ((lane + laneStep) % 3) as RunnerLane]
+    })
+  ).sort((a, b) => a[0] - b[0])
 
-  return doubled.map(([timeSec, lane], idx) => ({
+  return expanded.map(([timeSec, lane], idx) => ({
     id: `obs-${idx + 1}`,
     distance: Math.round(timeSec * PILOT_BASE_SPEED),
     lane

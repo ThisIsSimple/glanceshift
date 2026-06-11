@@ -77,6 +77,10 @@ type RuntimeTrial = {
 const UPRIGHT_MAX_DEG = DEFAULT_SLIDER_CONFIG.uprightMaxDeg
 const RELEASE_GAZE_OUT_MS = 2000
 const EXPERIMENT_EDGE: Edge = 'bottom'
+const SIDEBAR_TARGET_CENTERS = [0.14, 0.5, 0.86] as const
+const SIDEBAR_TARGET_MAJOR_FRAC = 0.16
+const SIDEBAR_TARGET_EDGE_FRAC = 0.16
+const SIDEBAR_TARGET_EDGE_MAX_PX = 150
 
 const RUN_HEADERS: Array<keyof RunRow & string> = [
   'session_id',
@@ -964,6 +968,12 @@ export function PilotExperiment({
       uprightSinceRef.current = null
       const wasVisible = glanceRef.current.visibleEdge != null
       const hover = targetFromGaze(EXPERIMENT_EDGE, gazePoint, viewport)
+      if (!wasVisible && selectedTargetRef.current != null) {
+        selectedTargetRef.current = null
+        setSelectedTarget(null)
+        sliderMapperRef.current.reset()
+        logEvent('target_selection_clear', { reason: 'sidebar_reentry' }, current.elapsedMs)
+      }
       setGlance((prev) => ({
         visibleEdge: EXPERIMENT_EDGE,
         hoveredTarget: hover ?? (wasVisible ? prev.hoveredTarget : null),
@@ -996,9 +1006,7 @@ export function PilotExperiment({
       if (trial.targetSelectedAtMs == null) trial.targetSelectedAtMs = current.elapsedMs
     }
     setGlance((prev) => ({ ...prev, returnedToPlayAreaAtMs: current.elapsedMs }))
-    if (selectedTargetRef.current !== target) {
-      selectTarget(target, 'auto')
-    }
+    selectTarget(target, 'auto')
   }, [
     activeTrial,
     condition,
@@ -1214,8 +1222,21 @@ function targetFromGaze(
   const isVertical = edge === 'left' || edge === 'right'
   const major = isVertical ? gaze.y : gaze.x
   const length = isVertical ? viewport.h : viewport.w
-  const rel = major / length
-  if (rel < 0 || rel > 1) return null
-  const idx = Math.max(0, Math.min(PILOT_TARGETS.length - 1, Math.floor(rel * PILOT_TARGETS.length)))
-  return PILOT_TARGETS[idx]
+  const edgeDistance =
+    edge === 'left'
+      ? gaze.x
+      : edge === 'right'
+        ? viewport.w - gaze.x
+        : edge === 'top'
+          ? gaze.y
+          : viewport.h - gaze.y
+  const crossLength = isVertical ? viewport.w : viewport.h
+  const edgeLimitPx = Math.min(SIDEBAR_TARGET_EDGE_MAX_PX, crossLength * SIDEBAR_TARGET_EDGE_FRAC)
+  if (edgeDistance < 0 || edgeDistance > edgeLimitPx) return null
+
+  const halfMajorPx = (length * SIDEBAR_TARGET_MAJOR_FRAC) / 2
+  const idx = SIDEBAR_TARGET_CENTERS.findIndex(
+    (center) => Math.abs(major - center * length) <= halfMajorPx
+  )
+  return idx >= 0 ? PILOT_TARGETS[idx] : null
 }

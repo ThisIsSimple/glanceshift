@@ -867,6 +867,44 @@
   border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.pilot-mixer-overlay.glanceshift.edge-top .pilot-mixer-targets,
+.pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-targets {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px clamp(44px, 7vw, 128px);
+  box-sizing: border-box;
+  grid-template-columns: none;
+}
+
+.pilot-mixer-overlay.glanceshift.edge-top .pilot-mixer-target,
+.pilot-mixer-overlay.glanceshift.edge-bottom .pilot-mixer-target {
+  flex: 0 0 clamp(126px, 16vw, 320px);
+  height: min(118px, calc(100% - 16px));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.pilot-mixer-overlay.glanceshift.edge-left .pilot-mixer-targets,
+.pilot-mixer-overlay.glanceshift.edge-right .pilot-mixer-targets {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: clamp(44px, 7vh, 110px) 16px;
+  box-sizing: border-box;
+  grid-template-rows: none;
+}
+
+.pilot-mixer-overlay.glanceshift.edge-left .pilot-mixer-target,
+.pilot-mixer-overlay.glanceshift.edge-right .pilot-mixer-target {
+  flex: 0 0 clamp(104px, 16vh, 170px);
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 16px;
+}
+
 .pilot-mixer-target.prompt-target {
   border-color: rgba(114, 219, 143, 0.38);
 }
