@@ -1,7 +1,7 @@
 /**
  * Edge Gaze Detector — 시선이 화면 가장자리에 의도적으로 진입한 순간을 판정.
  *
- * OneEuro-filtered gaze + IntentTracker + Rail FSM + UI snap.
+ * Tracker gaze + IntentTracker + Rail FSM + UI snap.
  *   의도(Intent) 와 위치(Position) 를 분리한다. 의도 score 가 임계에 도달하면 rail lock.
  *   Lock 중에는 along-edge 좌표만 유지하고 perpendicular 는 rail 평면에 강제한다.
  *

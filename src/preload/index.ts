@@ -4,20 +4,32 @@
  */
 import { contextBridge, ipcRenderer } from 'electron'
 
-type CameraStatus = 'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'
+type TobiiStatus = 'unloaded' | 'starting' | 'ready' | 'error' | 'stopped'
+type TobiiStatusPayload = { status: TobiiStatus; error?: string | null }
+type TobiiSample = {
+  valid: boolean
+  present: boolean
+  x: number
+  y: number
+  yaw: number
+  pitch: number
+  roll: number
+  t: number
+}
 
 const api = {
   /** click-through 마우스 통과 설정 (캘리브레이션 시 false로 토글) */
   setClickThrough: (enabled: boolean): Promise<boolean> =>
     ipcRenderer.invoke('glanceshift:set-click-through', enabled),
 
-  /** macOS 카메라 권한 상태 조회 */
-  getCameraPermission: (): Promise<CameraStatus> =>
-    ipcRenderer.invoke('glanceshift:get-camera-permission'),
+  startTobii: (): Promise<{ ok: boolean; status: TobiiStatus; error?: string }> =>
+    ipcRenderer.invoke('glanceshift:start-tobii'),
 
-  /** macOS 카메라 권한 요청 */
-  requestCameraPermission: (): Promise<boolean> =>
-    ipcRenderer.invoke('glanceshift:request-camera-permission'),
+  stopTobii: (): Promise<void> =>
+    ipcRenderer.invoke('glanceshift:stop-tobii'),
+
+  getTobiiStatus: (): Promise<TobiiStatusPayload> =>
+    ipcRenderer.invoke('glanceshift:get-tobii-status'),
 
   /** OS 볼륨 설정 (0..1). 실패 시 null. */
   setVolume: (value: number): Promise<number | null> =>
@@ -56,16 +68,22 @@ const api = {
     return () => ipcRenderer.removeListener('glanceshift:click-through', listener)
   },
 
-  onToggleCalibration: (cb: () => void): (() => void) => {
-    const listener = (): void => cb()
-    ipcRenderer.on('glanceshift:toggle-calibration', listener)
-    return () => ipcRenderer.removeListener('glanceshift:toggle-calibration', listener)
-  },
-
   onToggleEvaluation: (cb: () => void): (() => void) => {
     const listener = (): void => cb()
     ipcRenderer.on('glanceshift:toggle-evaluation', listener)
     return () => ipcRenderer.removeListener('glanceshift:toggle-evaluation', listener)
+  },
+
+  onTobiiSample: (cb: (sample: TobiiSample) => void): (() => void) => {
+    const listener = (_e: unknown, sample: TobiiSample): void => cb(sample)
+    ipcRenderer.on('glanceshift:tobii-sample', listener)
+    return () => ipcRenderer.removeListener('glanceshift:tobii-sample', listener)
+  },
+
+  onTobiiStatus: (cb: (status: TobiiStatusPayload) => void): (() => void) => {
+    const listener = (_e: unknown, status: TobiiStatusPayload): void => cb(status)
+    ipcRenderer.on('glanceshift:tobii-status', listener)
+    return () => ipcRenderer.removeListener('glanceshift:tobii-status', listener)
   }
 }
 

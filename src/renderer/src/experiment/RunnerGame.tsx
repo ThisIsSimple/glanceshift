@@ -1,8 +1,8 @@
 import {
   PILOT_GOAL_DISTANCE,
   PILOT_LOOKAHEAD_DISTANCE,
-  targetLabel,
-  directionLabel
+  directionLabel,
+  targetLabel
 } from './pilot-config'
 import type {
   ObstacleSpec,
@@ -63,7 +63,7 @@ export function RunnerGame({
 
       {activePrompt && (
         <div className="pilot-command-prompt">
-          {targetLabel(activePrompt.target)} 소리를 {directionLabel(activePrompt.direction)}
+          {targetLabel(activePrompt.target)}: {directionLabel(activePrompt.direction)}
         </div>
       )}
 

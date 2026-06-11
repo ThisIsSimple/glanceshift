@@ -4,7 +4,7 @@
  * 사용처: components/Evaluation.tsx 가 매 target 마다 sample buffer 를 모으고
  *         이 모듈로 mean, std, Euclidean error 를 계산.
  *
- * 보고서 §5.2 — Papoutsaki et al. (2016) 의 WebGazer ~4° baseline 과 비교 가능.
+ * Active tracker setup validation statistics.
  *   이 모듈이 출력하는 평균 오차(degrees) 가 그 baseline 의 우리 setup 검증 결과.
  */
 

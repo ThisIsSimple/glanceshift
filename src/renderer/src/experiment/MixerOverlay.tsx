@@ -1,5 +1,5 @@
 import type { Edge } from '../perception/edge-detector'
-import { directionLabel, PILOT_TARGETS, targetLabel } from './pilot-config'
+import { PILOT_TARGETS, directionLabel, targetLabel } from './pilot-config'
 import type {
   CommandTarget,
   MixerVolumes,
@@ -75,7 +75,7 @@ export function MixerOverlay({
       </div>
 
       {isBaseline && (
-        <div className="pilot-keyboard-hints">1/2/3 select · Q/E adjust · Enter complete</div>
+        <div className="pilot-keyboard-hints">1/2/3 select - Q/E adjust - Enter complete</div>
       )}
     </div>
   )

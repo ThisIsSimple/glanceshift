@@ -62,25 +62,25 @@ export interface SnapConfig {
 
 export const DEFAULT_SNAP_CONFIG: SnapConfig = {
   // intent zone 을 plan 초안의 0.30 → 0.18 로 축소.
-  // 이유: WebGazer 캘리브 오차 (±200px 정도) 가 있는 사용자가 중앙을 봐도
+  // 이유: 의도하지 않은 중앙 응시/스캔 중에도
   //       outer 30% 영역으로 시선이 자주 표류해 의도 없는 lock 이 자주 발생.
   //       18% 면 표류 폭이 같아도 safe zone (중앙 64%) 침범 확률이 크게 감소.
   //       lockZone 은 6% 더 넓혀 hysteresis 보존.
-  intentZoneFrac: 0.18,
-  lockZoneFrac: 0.24,
-  lockZoneFracActive: 0.55, // 조작 중 확장 (Phase 2 B-1)
-  holdZoneDecayMs: 400,
-  intentThreshold: 150, // ms-equivalent
+  intentZoneFrac: 0.12,
+  lockZoneFrac: 0.14,
+  lockZoneFracActive: 0.24,
+  holdZoneDecayMs: 180,
+  intentThreshold: 90,
   scoreMax: 250,
   decayPerMs: 0.5,
-  dwellBonusAfterMs: 200,
+  dwellBonusAfterMs: 80,
   dwellBonusRate: 0.5,
   lateralVelocityPxs: 500,
-  lateralPenaltyRate: 0.8,
-  exitGraceMs: 250,
+  lateralPenaltyRate: 0,
+  exitGraceMs: 120,
   // B-3 enter 속도 적응 — base intentZoneFrac(0.18) 기준 0.12~0.26 사이 동적.
   enterFracMin: 0.12,
-  enterFracMax: 0.26,
+  enterFracMax: 0.12,
   enterApproachRefPxs: 600,
   enterLateralRefPxs: 500
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EdgeSnapshot, Edge } from '../perception/edge-detector'
-import type { HeadSample } from '../perception/face-landmarker'
+import type { HeadSample } from '../perception/tracker-types'
 import { SliderIntentMapper, DEFAULT_SLIDER_CONFIG } from '../perception/slider-mapper'
 import { ExperimentAudioMixer } from './audio-mixer'
 import {
@@ -22,6 +22,7 @@ import {
   PILOT_TARGET_DELTA,
   PILOT_TARGETS,
   createPilotObstacles,
+  directionLabel,
   nextValueForDirection,
   targetLabel
 } from './pilot-config'
@@ -51,7 +52,6 @@ type Props = {
   head: HeadSample
   edgeSnapshot: EdgeSnapshot
   onDone: () => void
-  onRequestCalibration: () => void
 }
 
 type RuntimeTrial = {
@@ -166,8 +166,7 @@ export function PilotExperiment({
   gazePoint,
   head,
   edgeSnapshot,
-  onDone,
-  onRequestCalibration
+  onDone
 }: Props): JSX.Element {
   const [phase, setPhase] = useState<PilotPhase>('setup')
   const [participantId, setParticipantId] = useState('P01')
@@ -963,12 +962,13 @@ export function PilotExperiment({
       const trial = activeTrial()
       if (trial && trial.edgeEnterAtMs == null) trial.edgeEnterAtMs = current.elapsedMs
       uprightSinceRef.current = null
+      const wasVisible = glanceRef.current.visibleEdge != null
       const hover = targetFromGaze(EXPERIMENT_EDGE, gazePoint, viewport)
       setGlance((prev) => ({
         visibleEdge: EXPERIMENT_EDGE,
-        hoveredTarget: hover ?? prev.hoveredTarget,
+        hoveredTarget: hover ?? (wasVisible ? prev.hoveredTarget : null),
         lastHoverAtMs: hover ? current.elapsedMs : prev.lastHoverAtMs,
-        edgeEnterAtMs: prev.edgeEnterAtMs ?? current.elapsedMs,
+        edgeEnterAtMs: wasVisible ? prev.edgeEnterAtMs : current.elapsedMs,
         returnedToPlayAreaAtMs: prev.returnedToPlayAreaAtMs
       }))
       if (hover) {
@@ -986,9 +986,9 @@ export function PilotExperiment({
       }))
     }
 
-    const inPlay = isGazeInPlayArea(gazePoint)
-    if (!inPlay || !wasSidebarVisible) return
-    const target = glance.hoveredTarget
+    const validGaze = gazePoint != null && gazePoint.x >= 0 && gazePoint.y >= 0
+    if (!validGaze || !wasSidebarVisible) return
+    const target = glanceRef.current.hoveredTarget
     if (!target) return
     const trial = activeTrial()
     if (trial) {
@@ -1007,7 +1007,6 @@ export function PilotExperiment({
     gazePoint,
     glance.hoveredTarget,
     glance.visibleEdge,
-    isGazeInPlayArea,
     logEvent,
     selectTarget,
     viewport
@@ -1015,11 +1014,21 @@ export function PilotExperiment({
 
   useEffect(() => {
     if (condition !== 'glanceshift' || !selectedTarget || !head.detected) return
+    if (glance.visibleEdge != null) return
     const current = simRef.current?.snapshot()
     if (!current) return
     const update = sliderMapperRef.current.update(head.fRoll, head.fYaw, head.t || performance.now())
     applyVolume(selectedTarget, update.value, 'head-tilt')
-  }, [applyVolume, condition, head.detected, head.fRoll, head.fYaw, head.t, selectedTarget])
+  }, [
+    applyVolume,
+    condition,
+    glance.visibleEdge,
+    head.detected,
+    head.fRoll,
+    head.fYaw,
+    head.t,
+    selectedTarget
+  ])
 
   useEffect(() => {
     if (condition !== 'glanceshift' || !selectedTarget) return
@@ -1068,7 +1077,7 @@ export function PilotExperiment({
 
   const currentPromptText = useMemo(() => {
     if (!activePrompt) return ''
-    return `${targetLabel(activePrompt.target)} 소리`
+    return `${targetLabel(activePrompt.target)} ${directionLabel(activePrompt.direction)}`
   }, [activePrompt])
 
   if (phase === 'setup') {
@@ -1089,9 +1098,6 @@ export function PilotExperiment({
               }}
             >
               오디오 준비
-            </button>
-            <button type="button" onClick={onRequestCalibration}>
-              캘리브레이션
             </button>
             <button type="button" className="primary" onClick={startNextPractice}>
               시작
