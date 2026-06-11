@@ -641,10 +641,7 @@
   position: absolute;
   inset: 0;
   display: grid;
-  place-items: start center;
-  box-sizing: border-box;
-  padding-top: clamp(36px, 5vh, 56px);
-  padding-bottom: clamp(210px, 23vh, 280px);
+  place-items: center;
 }
 
 .pilot-runner-hud {
@@ -692,8 +689,9 @@
   position: relative;
   width: min(520px, 48vw);
   min-width: 360px;
-  height: min(660px, 64vh);
-  min-height: clamp(380px, calc(100vh - 280px), 470px);
+  height: min(760px, 76vh);
+  min-height: 540px;
+  transform: translateY(clamp(-96px, -7vh, -64px));
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   background:
@@ -726,7 +724,7 @@
 
 .pilot-player {
   position: absolute;
-  bottom: 72px;
+  bottom: 46px;
   width: 46px;
   height: 46px;
   transform: translateX(-50%);
@@ -752,7 +750,7 @@
 
 .pilot-hit-burst {
   position: absolute;
-  bottom: 108px;
+  bottom: 82px;
   width: 74px;
   height: 42px;
   transform: translateX(-50%);
