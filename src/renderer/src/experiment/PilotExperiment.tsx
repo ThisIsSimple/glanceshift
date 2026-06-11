@@ -1016,12 +1016,6 @@ export function PilotExperiment({
       uprightSinceRef.current = null
       const wasVisible = glanceRef.current.visibleEdge != null
       const hover = targetFromGaze(EXPERIMENT_EDGE, gazePoint, viewport)
-      if (!wasVisible && selectedTargetRef.current != null) {
-        selectedTargetRef.current = null
-        setSelectedTarget(null)
-        sliderMapperRef.current.reset()
-        logEvent('target_selection_clear', { reason: 'sidebar_reentry' }, current.elapsedMs)
-      }
       setGlance((prev) => ({
         visibleEdge: EXPERIMENT_EDGE,
         hoveredTarget: hover ?? (wasVisible ? prev.hoveredTarget : null),
