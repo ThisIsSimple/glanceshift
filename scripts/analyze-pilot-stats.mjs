@@ -8,7 +8,7 @@
  *  1) 설문 1·2 를 within-subjects(대응) 형태로 합쳐 참가자 11명(임의 ID P1–P11) 구성.
  *     - 설문1(8행, 조건 라벨 있음): 연속 2행 = 한 사람 → P1–P4.
  *     - 설문2(7행, 한 행에 두 조건): 앞 4문항=베이스라인, 뒤 4문항=GlanceShift → P5–P11.
- *     - 자유응답까지 완전 동일한 행은 "중복" 으로 보고 주 분석(n=10)에서 제외, n=11 은 부수로 병기.
+ *     - 자유응답까지 완전 동일한 행은 중복 응답으로 확정 → 제외. 분석 기준은 n=10.
  *  2) 항목(통제감/자연스러움/흐름끊김/재사용)마다 **대응표본 t-검정** + Wilcoxon 부호순위검정(비모수
  *     보강) + 효과크기 Cohen's d_z. 원점수 유지(flow_break 역코딩 안 함).
  *  3) 행동 로그(P01 단일)는 **기술통계만**(추론검정 없음) — 조건별 mean/sd/median/min/max + 성공률.
@@ -332,9 +332,9 @@ const f2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : '—')
 const f3 = (x) => (Number.isFinite(x) ? x.toFixed(3) : '—')
 const fp = (x) => (Number.isFinite(x) ? (x < 0.001 ? '<0.001' : x.toFixed(3)) : '—')
 
-function surveyTableMd(title, rows) {
+function surveyTableMd(rows) {
   const out = []
-  out.push(`### ${title} (n=${rows[0].n})\n`)
+  out.push(`### 항목별 대응표본 t-검정 (n=${rows[0].n}, 중복 제외)\n`)
   out.push('| 항목(방향) | base mean(sd) | glance mean(sd) | diff mean(sd) | t(df) | p (t) | p (Wilcoxon) | Cohen dz |')
   out.push('|---|---|---|---|---|---|---|---|')
   for (const r of rows) {
@@ -350,45 +350,38 @@ function surveyTableMd(title, rows) {
 function main() {
   const { all, n10, dupIds } = buildParticipants()
   console.log(`# 파일럿 설문 통계 재분석\n`)
-  console.log(`참가자: 전체 ${all.length}명 (P1–P${all.length}). 중복 제외: ${dupIds.join(', ') || '없음'} → 주 분석 n=${n10.length}.\n`)
+  console.log(`참가자: 응답 ${all.length}건 중 자유응답까지 완전 동일한 ${dupIds.join(', ') || '없음'} 을`)
+  console.log(`중복으로 확정·제외 → 분석 기준 n=${n10.length}.\n`)
   console.log(`diff = GlanceShift − 베이스라인. flow_break 는 ↓좋음(음수 diff = 개선).\n`)
 
-  const primary = analyzeVariant(n10) // n=10 주 분석
-  const withDup = analyzeVariant(all) // n=11 부수
-
-  console.log(surveyTableMd('주 분석 — 중복 제외', primary) + '\n')
-  console.log(surveyTableMd('부수 — 중복 포함', withDup) + '\n')
+  const primary = analyzeVariant(n10) // n=10 (중복 제외) — 유일 분석 기준
+  console.log(surveyTableMd(primary) + '\n')
 
   // CSV: summary_survey_stats.csv
   const csvLines = [
-    'variant,question,direction,n,base_mean,base_sd,glance_mean,glance_sd,diff_mean,diff_sd,t,df,p_ttest,W,p_wilcoxon,cohen_dz'
+    'question,direction,n,base_mean,base_sd,glance_mean,glance_sd,diff_mean,diff_sd,t,df,p_ttest,W,p_wilcoxon,cohen_dz'
   ]
-  const emit = (variant, rows) => {
-    for (const r of rows) {
-      csvLines.push(
-        [
-          variant,
-          r.item.key,
-          r.item.dir,
-          r.n,
-          f3(r.baseMean),
-          f3(r.baseSd),
-          f3(r.glanceMean),
-          f3(r.glanceSd),
-          f3(r.diffMean),
-          f3(r.diffSd),
-          f3(r.t),
-          r.df,
-          f3(r.pT),
-          f3(r.W),
-          f3(r.pW),
-          f3(r.dz)
-        ].join(',')
-      )
-    }
+  for (const r of primary) {
+    csvLines.push(
+      [
+        r.item.key,
+        r.item.dir,
+        r.n,
+        f3(r.baseMean),
+        f3(r.baseSd),
+        f3(r.glanceMean),
+        f3(r.glanceSd),
+        f3(r.diffMean),
+        f3(r.diffSd),
+        f3(r.t),
+        r.df,
+        f3(r.pT),
+        f3(r.W),
+        f3(r.pW),
+        f3(r.dz)
+      ].join(',')
+    )
   }
-  emit('n10_primary', primary)
-  emit('n11_with_dup', withDup)
   writeFileSync(join(OUT_DIR, 'summary_survey_stats.csv'), csvLines.join('\n') + '\n', 'utf8')
   console.log(`[write] docs/analysis/summary_survey_stats.csv`)
 
@@ -407,11 +400,16 @@ function main() {
   writeFileSync(join(OUT_DIR, 'summary_behavioral_descriptive.csv'), bLines.join('\n') + '\n', 'utf8')
   console.log(`[write] docs/analysis/summary_behavioral_descriptive.csv`)
 
-  // 검산용: n=11 평균 콘솔 출력
-  console.log('\n## 검산 (n=11 평균 — 기존 summary_survey.csv 와 대조)')
-  for (const r of withDup) {
-    console.log(`  ${r.item.key}: base ${f2(r.baseMean)} → glance ${f2(r.glanceMean)}`)
-  }
+  // 파싱·페어링 검증: 전체 11건 평균이 기존 summary_survey.csv 와 일치하는지 확인(분석 자체는 n=10).
+  const expect = { control: [4.0, 5.27], natural: [3.64, 4.36], flow_break: [4.55, 3.27], reuse: [3.27, 4.82] }
+  const allRows = analyzeVariant(all)
+  const ok = allRows.every((r) => {
+    const [b, g] = expect[r.item.key]
+    return Math.abs(r.baseMean - b) < 0.01 && Math.abs(r.glanceMean - g) < 0.01
+  })
+  console.log(`\n[verify] 전체 11건 평균 = 기존 summary_survey.csv: ${ok ? 'OK' : 'MISMATCH'} (파싱·페어링 검증)`)
+  console.log('## n=10 평균 (분석 기준)')
+  for (const r of primary) console.log(`  ${r.item.key}: base ${f2(r.baseMean)} → glance ${f2(r.glanceMean)}`)
 }
 
 main()
