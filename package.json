@@ -8,6 +8,7 @@
   "type": "module",
   "scripts": {
     "compare:evals": "node scripts/compare-evals.mjs",
+    "analyze:pilot": "node scripts/analyze-pilot-stats.mjs",
     "build:tobii": "powershell -ExecutionPolicy Bypass -File tools/tobii-bridge/build.ps1",
     "dev": "electron-vite dev",
     "build": "electron-vite build",

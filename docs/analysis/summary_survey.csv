@@ -1,0 +1,5 @@
+question,baseline_n,baseline_mean,glanceshift_n,glanceshift_mean
+"control(통제감,↑good)",11,4,11,5.27
+"natural(자연스러움,↑good)",11,3.64,11,4.36
+"flow_break(흐름끊김,↓good)",11,4.55,11,3.27
+"reuse(재사용의향,↑good)",11,3.27,11,4.82
