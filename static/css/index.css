@@ -1,0 +1,92 @@
+body {
+  font-family: 'Noto Sans KR', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #1a1a1a;
+}
+
+.hero.is-light { background: linear-gradient(180deg, #f7f8fb 0%, #ffffff 100%); }
+
+.publication-title { font-weight: 800; letter-spacing: -0.02em; }
+
+.publication-subtitle {
+  font-weight: 500;
+  color: #4a4a4a;
+  line-height: 1.4;
+}
+
+.author-block { display: inline-block; margin: 0 0.4rem; }
+
+.section { padding: 3rem 1.5rem; }
+
+.section-title {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-bottom: 1.5rem !important;
+}
+
+.content p { line-height: 1.85; }
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #6b7bd6;
+  margin-bottom: 0.4rem;
+}
+
+.figure-card {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+  border: 1px solid #ececf0;
+}
+
+figcaption {
+  font-size: 0.9rem;
+  color: #6a6a6a;
+  margin-top: 0.75rem;
+  line-height: 1.6;
+}
+
+.key-stat {
+  text-align: center;
+  padding: 1.2rem;
+}
+.key-stat .num {
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: #5562c9;
+  line-height: 1.1;
+}
+.key-stat .label { color: #555; font-size: 0.92rem; margin-top: 0.3rem; }
+
+.video-embed {
+  position: relative;
+  padding-bottom: 56.25%;
+  height: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+}
+.video-embed iframe, .video-embed .placeholder {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;
+}
+.video-embed .placeholder {
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  background: #14151a; color: #cfd2e0; text-align: center; padding: 2rem;
+}
+
+table.result-table th, table.result-table td { text-align: center; }
+table.result-table td:first-child, table.result-table th:first-child { text-align: left; }
+
+.tag-pill {
+  display: inline-block; background: #eef0fb; color: #4a55b8;
+  border-radius: 999px; padding: 0.3rem 0.9rem; margin: 0.2rem; font-size: 0.85rem; font-weight: 600;
+}
+
+.bibtex-box {
+  background: #15161b; color: #e6e6e6; border-radius: 10px; padding: 1.2rem 1.4rem;
+  font-family: 'SF Mono', Menlo, monospace; font-size: 0.85rem; overflow-x: auto;
+}
+
+footer.footer { background: #f7f8fb; }
